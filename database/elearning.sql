@@ -2,8 +2,7 @@
 -- SCRIPT KHỞI TẠO CSDL E-LEARNING (MYSQL)
 -- DỰA TRÊN SƠ ĐỒ E-ERD CHUẨN XML
 -- ==========================================
-CREATE DATABASE IF NOT EXISTS ELearningDB;
-USE ELearningDB;
+USE elearning;
 
 -- 1. BẢNG DANH MỤC CƠ SỞ
 CREATE TABLE Role (
