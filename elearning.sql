@@ -1,21 +1,27 @@
--- ==============================================
--- SCRIPT KHỞI TẠO CSDL E-LEARNING (MYSQL 5.7+)
--- DỰA TRÊN SƠ ĐỒ EERD - CÓ THUỘC TÍNH DẪN XUẤT SCORE
--- ==============================================
+-- ============================================================
+-- DATABASE CORE – THÀNH VIÊN 1
+-- 1. Tạo bảng & ràng buộc
+-- 2. Dữ liệu mẫu (≥5 dòng/bảng)
+-- 3. Trigger nghiệp vụ
+-- ============================================================
 
 DROP DATABASE IF EXISTS ELearningDB;
 CREATE DATABASE ELearningDB;
 USE ELearningDB;
 
--- 1. BẢNG DANH MỤC CƠ SỞ
+-- ------------------------------------------------------------
+-- 1.1. TẠO BẢNG VÀ RÀNG BUỘC
+-- ------------------------------------------------------------
+
+-- Danh mục
 CREATE TABLE Role (
     role_id INT AUTO_INCREMENT PRIMARY KEY,
-    role_name VARCHAR(50) NOT NULL
+    role_name VARCHAR(50) NOT NULL UNIQUE
 );
 
 CREATE TABLE Status (
     status_id INT AUTO_INCREMENT PRIMARY KEY,
-    status_display VARCHAR(50) NOT NULL
+    status_display VARCHAR(50) NOT NULL UNIQUE
 );
 
 CREATE TABLE Semester (
@@ -27,7 +33,7 @@ CREATE TABLE Semester (
 
 CREATE TABLE Faculty (
     faculty_id INT AUTO_INCREMENT PRIMARY KEY,
-    faculty_name VARCHAR(100) NOT NULL
+    faculty_name VARCHAR(100) NOT NULL UNIQUE
 );
 
 CREATE TABLE Subject (
@@ -37,17 +43,16 @@ CREATE TABLE Subject (
     FOREIGN KEY (faculty_id) REFERENCES Faculty(faculty_id)
 );
 
--- 2. QUẢN LÝ NGƯỜI DÙNG VÀ TÀI KHOẢN (KẾ THỪA DISJOINT)
+-- Người dùng và phân cấp
 CREATE TABLE User (
     id INT AUTO_INCREMENT PRIMARY KEY,
     firstName VARCHAR(50) NOT NULL,
     middleName VARCHAR(50),
     lastName VARCHAR(50) NOT NULL,
-    sex ENUM('Male', 'Female', 'Other'),
+    sex ENUM('Male', 'Female', 'Other') NOT NULL,
     email VARCHAR(100) UNIQUE NOT NULL,
     birthday DATE,
-    nationality VARCHAR(50),
-    CONSTRAINT chk_user_email CHECK (email LIKE '%@%')
+    nationality VARCHAR(50)
 );
 
 CREATE TABLE Student (
@@ -78,7 +83,7 @@ CREATE TABLE User_acc (
     FOREIGN KEY (role_id) REFERENCES Role(role_id)
 );
 
--- 3. QUẢN LÝ LỚP HỌC
+-- Lớp học
 CREATE TABLE Class (
     class_id INT AUTO_INCREMENT PRIMARY KEY,
     class_name VARCHAR(100) NOT NULL,
@@ -100,7 +105,7 @@ CREATE TABLE Enrollment (
     FOREIGN KEY (class_id) REFERENCES Class(class_id) ON DELETE CASCADE
 );
 
--- 4. NỘI DUNG HỌC TẬP (CÁC THỰC THỂ YẾU)
+-- Nội dung học tập
 CREATE TABLE Chapter (
     class_id INT,
     chapter_id INT,
@@ -131,17 +136,18 @@ CREATE TABLE File (
     FOREIGN KEY (class_id, chapter_id, topic_id) REFERENCES Topic(class_id, chapter_id, topic_id) ON DELETE CASCADE
 );
 
--- 5. BÀI KIỂM TRA (TEST & SUBCLASSES)
+-- Kiểm tra
 CREATE TABLE Test (
     test_id INT AUTO_INCREMENT PRIMARY KEY,
     test_name VARCHAR(255) NOT NULL,
     test_start DATETIME,
     test_end DATETIME,
-    test_timer INT COMMENT 'Thời gian làm bài (phút)',
+    test_timer INT COMMENT 'phút',
     class_id INT NOT NULL,
     chapter_id INT,
     FOREIGN KEY (class_id) REFERENCES Class(class_id),
-    FOREIGN KEY (class_id, chapter_id) REFERENCES Chapter(class_id, chapter_id)
+    FOREIGN KEY (class_id, chapter_id) REFERENCES Chapter(class_id, chapter_id),
+    CONSTRAINT chk_test_dates CHECK (test_start < test_end)
 );
 
 CREATE TABLE Quiz (
@@ -157,7 +163,7 @@ CREATE TABLE File_submission (
     FOREIGN KEY (test_id) REFERENCES Test(test_id) ON DELETE CASCADE
 );
 
--- 6. NGÂN HÀNG CÂU HỎI
+-- Câu hỏi
 CREATE TABLE Question (
     question_id INT AUTO_INCREMENT PRIMARY KEY,
     question_type ENUM('multiple_choice', 'true_false', 'essay') NOT NULL,
@@ -174,22 +180,21 @@ CREATE TABLE Choice (
     FOREIGN KEY (question_id) REFERENCES Question(question_id) ON DELETE CASCADE
 );
 
--- 7. QUÁ TRÌNH LÀM BÀI CỦA SINH VIÊN (CÓ SCORE DẪN XUẤT)
+-- Làm bài
 CREATE TABLE Attempt (
     attempt_id INT AUTO_INCREMENT PRIMARY KEY,
     attempt_index INT NOT NULL,
     start_time DATETIME DEFAULT CURRENT_TIMESTAMP,
     end_time DATETIME,
-    timer INT COMMENT 'Thời gian làm bài (giây)',
+    timer INT,
     test_id INT NOT NULL,
     student_id INT NOT NULL,
-    -- Cột ảo tính điểm từ câu trả lời đúng (yêu cầu MySQL 5.7+)
     score DECIMAL(5,2) GENERATED ALWAYS AS (
         (SELECT COUNT(*)
          FROM Student_answer sa
          JOIN Choice c ON sa.choice_id = c.choice_id
          WHERE sa.attempt_id = attempt_id AND c.is_true = 1)
-    ) STORED COMMENT 'Điểm số dẫn xuất (tự động từ câu trả lời đúng)',
+    ) STORED,
     FOREIGN KEY (test_id) REFERENCES Test(test_id) ON DELETE CASCADE,
     FOREIGN KEY (student_id) REFERENCES Student(id) ON DELETE CASCADE
 );
@@ -209,7 +214,7 @@ CREATE TABLE Student_answer (
     )
 );
 
--- 8. TƯƠNG TÁC LỚP HỌC (POST & COMMENT)
+-- Tương tác
 CREATE TABLE Post (
     post_id INT AUTO_INCREMENT PRIMARY KEY,
     post_name VARCHAR(255) NOT NULL,
@@ -232,6 +237,215 @@ CREATE TABLE Comment (
     FOREIGN KEY (ua_id) REFERENCES User_acc(ua_id)
 );
 
--- ==============================================
+-- ------------------------------------------------------------
+-- 1.2. DỮ LIỆU MẪU (≥5 DÒNG MỖI BẢNG)
+-- ------------------------------------------------------------
+
+-- Role
+INSERT INTO Role (role_name) VALUES 
+('Student'), ('Lecturer'), ('Admin'), ('Teaching Assistant'), ('Guest');
+
+-- Status
+INSERT INTO Status (status_display) VALUES 
+('Open'), ('Closed'), ('Ongoing'), ('Cancelled'), ('Completed');
+
+-- Semester
+INSERT INTO Semester (semester_start, semester_end) VALUES
+('2025-01-01', '2025-05-31'),
+('2025-06-01', '2025-08-31'),
+('2025-09-01', '2025-12-31'),
+('2026-01-01', '2026-05-31'),
+('2026-06-01', '2026-08-31');
+
+-- Faculty
+INSERT INTO Faculty (faculty_name) VALUES
+('Computer Science'), ('Electrical Engineering'), ('Mechanical Engineering'),
+('Civil Engineering'), ('Business Administration');
+
+-- Subject
+INSERT INTO Subject (subject_name, faculty_id) VALUES
+('Database Systems', 1),
+('Data Structures', 1),
+('Circuit Analysis', 2),
+('Thermodynamics', 3),
+('Structural Analysis', 4),
+('Marketing Principles', 5);
+
+-- User (10 người để phân bổ cho Student, Lecturer, Admin)
+INSERT INTO User (firstName, middleName, lastName, sex, email, birthday, nationality) VALUES
+('Nguyen', 'Van', 'An', 'Male', 'an.nguyen@hcmut.edu.vn', '2000-01-15', 'Vietnam'),
+('Tran', 'Thi', 'Binh', 'Female', 'binh.tran@hcmut.edu.vn', '2001-03-22', 'Vietnam'),
+('Le', 'Quang', 'Chau', 'Male', 'chau.le@hcmut.edu.vn', '2000-07-30', 'Vietnam'),
+('Pham', 'Minh', 'Duc', 'Male', 'duc.pham@hcmut.edu.vn', '1999-11-11', 'Vietnam'),
+('Hoang', 'Thi', 'Giang', 'Female', 'giang.hoang@hcmut.edu.vn', '2001-05-05', 'Vietnam'),
+('Vo', 'Van', 'Hai', 'Male', 'hai.vo@hcmut.edu.vn', '1985-09-12', 'Vietnam'),
+('Dang', 'Thi', 'Lan', 'Female', 'lan.dang@hcmut.edu.vn', '1990-12-03', 'Vietnam'),
+('Bui', 'Duc', 'Minh', 'Male', 'minh.bui@hcmut.edu.vn', '1988-04-18', 'Vietnam'),
+('Ngo', 'Thanh', 'Nga', 'Female', 'nga.ngo@hcmut.edu.vn', '1992-06-25', 'Vietnam'),
+('Trinh', 'Van', 'Phong', 'Male', 'phong.trinh@hcmut.edu.vn', '1980-10-10', 'Vietnam');
+
+-- Student (5 sinh viên, id từ 1 đến 5)
+INSERT INTO Student (id, s_mssv) VALUES
+(1, 'SV001'), (2, 'SV002'), (3, 'SV003'), (4, 'SV004'), (5, 'SV005');
+
+-- Lecturer (3 giảng viên, id 6-8)
+INSERT INTO Lecturer (id, l_msgv) VALUES
+(6, 'GV001'), (7, 'GV002'), (8, 'GV003');
+
+-- Admin (2 admin, id 9-10)
+INSERT INTO Admin (id, a_msqt) VALUES
+(9, 'AD001'), (10, 'AD002');
+
+-- User_acc (tài khoản cho tất cả 10 user)
+INSERT INTO User_acc (ua_id, ua_username, ua_password, ua_image, role_id) VALUES
+(1, 'an.nguyen', 'pass123', NULL, 1),
+(2, 'binh.tran', 'pass123', NULL, 1),
+(3, 'chau.le', 'pass123', NULL, 1),
+(4, 'duc.pham', 'pass123', NULL, 1),
+(5, 'giang.hoang', 'pass123', NULL, 1),
+(6, 'hai.vo', 'gvpass', NULL, 2),
+(7, 'lan.dang', 'gvpass', NULL, 2),
+(8, 'minh.bui', 'gvpass', NULL, 2),
+(9, 'nga.ngo', 'adminpass', NULL, 3),
+(10, 'phong.trinh', 'adminpass', NULL, 3);
+
+-- Class (5 lớp học)
+INSERT INTO Class (class_name, subject_id, semester_id, status_id, lecturer_id) VALUES
+('DB-2025-01', 1, 1, 1, 6),
+('DS-2025-01', 2, 1, 1, 7),
+('Circuit-2025-01', 3, 1, 1, 8),
+('Thermo-2025-01', 4, 1, 1, 6),
+('Struct-2025-01', 5, 1, 2, 7);
+
+-- Enrollment (mỗi sinh viên đăng ký 2-3 lớp)
+INSERT INTO Enrollment (student_id, class_id) VALUES
+(1,1), (1,2), (2,1), (2,3), (3,2), (3,4), (4,3), (4,5), (5,1), (5,4);
+
+-- Chapter (mỗi lớp 2 chương)
+INSERT INTO Chapter (class_id, chapter_id, chapter_name) VALUES
+(1,1,'Introduction'), (1,2,'Relational Model'),
+(2,1,'Arrays'), (2,2,'Linked Lists'),
+(3,1,'Ohm Law'), (3,2,'Kirchhoff Laws'),
+(4,1,'Laws of Thermodynamics'), (4,2,'Entropy'),
+(5,1,'Forces'), (5,2,'Beam Deflection');
+
+-- Topic (mỗi chương 2 topic)
+INSERT INTO Topic (class_id, chapter_id, topic_id, topic_name, topic_content) VALUES
+(1,1,1,'DBMS Overview','...'), (1,1,2,'Data Models','...'),
+(1,2,1,'Keys','...'), (1,2,2,'Normalization','...'),
+(2,1,1,'Array operations','...'), (2,1,2,'Multi-dim arrays','...'),
+(2,2,1,'Singly Linked List','...'), (2,2,2,'Doubly Linked List','...'),
+(3,1,1,'Voltage & Current','...'), (3,1,2,'Resistance','...'),
+(3,2,1,'KVL','...'), (3,2,2,'KCL','...'),
+(4,1,1,'Zeroth Law','...'), (4,1,2,'First Law','...'),
+(4,2,1,'Second Law','...'), (4,2,2,'Third Law','...'),
+(5,1,1,'Equilibrium','...'), (5,1,2,'Stress & Strain','...'),
+(5,2,1,'Elastic Curve','...'), (5,2,2,'Superposition','...');
+
+-- File (5 file đính kèm)
+INSERT INTO File (class_id, chapter_id, topic_id, file_id, file_name, file_path) VALUES
+(1,1,1,1,'lecture1.pdf','/files/lecture1.pdf'),
+(1,1,2,1,'slides.pptx','/files/slides.pptx'),
+(2,1,1,1,'array_examples.zip','/files/array_examples.zip'),
+(3,2,2,1,'kcl_simulation.mp4','/files/kcl_simulation.mp4'),
+(4,1,2,1,'thermo_lab.pdf','/files/thermo_lab.pdf');
+
+-- Test (5 bài test)
+INSERT INTO Test (test_name, test_start, test_end, test_timer, class_id, chapter_id) VALUES
+('Midterm DB', '2025-03-15 09:00:00', '2025-03-15 10:30:00', 90, 1, 1),
+('Quiz 1 DS', '2025-03-20 10:00:00', '2025-03-20 10:30:00', 30, 2, 1),
+('Final Circuit', '2025-05-10 13:00:00', '2025-05-10 15:00:00', 120, 3, NULL),
+('Thermo Assignment', '2025-04-01 00:00:00', '2025-04-07 23:59:59', 0, 4, NULL),
+('Struct Quiz', '2025-03-25 08:00:00', '2025-03-25 08:45:00', 45, 5, 2);
+
+-- Quiz (2 bài trắc nghiệm)
+INSERT INTO Quiz (test_id, quizz_id) VALUES (1, 'QZ001'), (2, 'QZ002');
+
+-- File_submission (2 bài nộp file)
+INSERT INTO File_submission (test_id, fs_id, path) VALUES (4, 'FS001', '/submissions/'), (5, 'FS002', '/submissions/');
+
+-- Question (mỗi test vài câu hỏi)
+INSERT INTO Question (question_type, question_content, test_id) VALUES
+('multiple_choice', 'What is a primary key?', 1),
+('true_false', 'A foreign key can be NULL.', 1),
+('multiple_choice', 'Which is not a linear data structure?', 2),
+('essay', 'Explain KVL with example.', 3),
+('multiple_choice', 'First law of thermodynamics is about?', 4);
+
+-- Choice (các lựa chọn cho câu hỏi trắc nghiệm)
+INSERT INTO Choice (choice_content, is_true, question_id) VALUES
+('Unique identifier', 1, 1), ('Can be duplicate', 0, 1), ('Always integer', 0, 1),
+('True', 1, 2), ('False', 0, 2),
+('Array', 0, 3), ('Stack', 0, 3), ('Tree', 1, 3),
+('Conservation of energy', 1, 5), ('Conservation of mass', 0, 5);
+
+-- Attempt (một vài lần làm bài)
+INSERT INTO Attempt (attempt_index, start_time, end_time, timer, test_id, student_id) VALUES
+(1, '2025-03-15 09:05:00', '2025-03-15 10:20:00', 4500, 1, 1),
+(1, '2025-03-20 10:02:00', '2025-03-20 10:28:00', 1560, 2, 2),
+(1, '2025-03-15 09:10:00', '2025-03-15 10:25:00', 4500, 1, 3),
+(2, '2025-03-16 14:00:00', '2025-03-16 15:30:00', 5400, 1, 1), -- lần 2
+(1, '2025-03-26 08:05:00', '2025-03-26 08:40:00', 2100, 5, 4);
+
+-- Student_answer (câu trả lời tương ứng)
+INSERT INTO Student_answer (attempt_id, question_id, choice_id) VALUES
+(1, 1, 1), (1, 2, 4),
+(2, 3, 8),
+(3, 1, 1), (3, 2, 4),
+(4, 1, 2), (4, 2, 5),
+(5, 5, 9);
+
+-- Post (bài đăng)
+INSERT INTO Post (post_name, post_description, post_start, ua_id, class_id) VALUES
+('Welcome to DB', 'Introduction post', NOW(), 1, 1),
+('Assignment 1', 'Submit by 15/4', '2025-04-01 00:00:00', 6, 1),
+('Lecture notes', 'Chapter 1 slides', NOW(), 6, 2),
+('Quiz reminder', 'Next Monday', '2025-03-19 08:00:00', 7, 2),
+('Project groups', 'Form groups of 3', NOW(), 8, 3);
+
+-- Comment (bình luận)
+INSERT INTO Comment (comment_content, post_id, ua_id) VALUES
+('Thanks!', 1, 2),
+('When is deadline?', 2, 3),
+('Good material', 3, 4),
+('I will attend', 4, 5),
+('Group 1: A, B, C', 5, 1);
+
+-- ------------------------------------------------------------
+-- 2.2.1. TRIGGER KIỂM TRA RÀNG BUỘC NGHIỆP VỤ
+-- Mô tả: Đảm bảo thời gian bắt đầu làm bài (start_time) của Attempt
+-- phải nằm trong khoảng thời gian cho phép của Test (test_start <= start_time <= test_end)
+-- ------------------------------------------------------------
+
+DELIMITER //
+
+CREATE TRIGGER trg_check_attempt_time
+BEFORE INSERT ON Attempt
+FOR EACH ROW
+BEGIN
+    DECLARE test_start_dt DATETIME;
+    DECLARE test_end_dt DATETIME;
+
+    -- Lấy thông tin thời gian của bài test tương ứng
+    SELECT test_start, test_end INTO test_start_dt, test_end_dt
+    FROM Test
+    WHERE test_id = NEW.test_id;
+
+    -- Kiểm tra start_time của attempt phải nằm trong [test_start, test_end]
+    IF NEW.start_time < test_start_dt OR NEW.start_time > test_end_dt THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Thời gian bắt đầu làm bài không nằm trong khoảng thời gian cho phép của bài kiểm tra.';
+    END IF;
+
+    -- Nếu có end_time, kiểm tra thêm end_time <= test_end (tùy chọn)
+    IF NEW.end_time IS NOT NULL AND NEW.end_time > test_end_dt THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Thời gian kết thúc làm bài vượt quá thời gian kết thúc của bài kiểm tra.';
+    END IF;
+END//
+
+DELIMITER ;
+
+-- ============================================================
 -- KẾT THÚC SCRIPT
--- ==============================================
+-- ============================================================
