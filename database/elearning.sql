@@ -1,7 +1,7 @@
 -- ============================================================
 -- DATABASE: ELearningDB
 -- MÔ TẢ: Hệ thống quản lý học tập (LMS)
--- PHIÊN BẢN: 2.1 (Đã sửa lỗi từ PR review: trigger tính điểm, quan hệ Test-Question, ràng buộc)
+-- PHIÊN BẢN: 2.2 (Đã sửa tất cả lỗi từ Copilot review: CHECK constraints, logic tính điểm)
 -- ============================================================
 
 DROP DATABASE IF EXISTS ELearningDB;
@@ -169,13 +169,13 @@ CREATE TABLE File_submission (
 );
 
 -- ------------------------------------------------------------
--- 6. NGÂN HÀNG CÂU HỎI (ĐÃ SỬA: BỎ test_id, dùng Test_Question làm liên kết N-N)
+-- 6. NGÂN HÀNG CÂU HỎI
 -- ------------------------------------------------------------
 CREATE TABLE Question (
     question_id INT AUTO_INCREMENT PRIMARY KEY,
     question_type ENUM('multiple_choice', 'true_false', 'essay') NOT NULL,
     question_content TEXT NOT NULL,
-    max_score DECIMAL(5,2) DEFAULT 1.0 NOT NULL COMMENT 'Điểm tối đa mặc định của câu hỏi',
+    max_score DECIMAL(5,2) DEFAULT 1.0 NOT NULL,
     CONSTRAINT chk_question_max_score_positive CHECK (max_score > 0)
 );
 
@@ -185,9 +185,9 @@ CREATE TABLE Test_Question (
     question_id INT NOT NULL,
     custom_score DECIMAL(5,2) DEFAULT NULL COMMENT 'NULL = dùng max_score của Question',
     PRIMARY KEY (test_id, question_id),
-    CHECK (custom_score IS NULL OR custom_score > 0),
     FOREIGN KEY (test_id) REFERENCES Test(test_id) ON DELETE CASCADE,
-    FOREIGN KEY (question_id) REFERENCES Question(question_id) ON DELETE CASCADE
+    FOREIGN KEY (question_id) REFERENCES Question(question_id) ON DELETE CASCADE,
+    CONSTRAINT chk_custom_score_positive CHECK (custom_score IS NULL OR custom_score > 0)
 );
 
 CREATE TABLE Choice (
@@ -196,12 +196,11 @@ CREATE TABLE Choice (
     choice_content TEXT NOT NULL,
     is_true BOOLEAN DEFAULT FALSE,
     FOREIGN KEY (question_id) REFERENCES Question(question_id) ON DELETE CASCADE,
-    -- Phục vụ cho ràng buộc khóa ngoại kép từ Student_answer
     UNIQUE KEY uq_choice_question (question_id, choice_id)
 );
 
 -- ------------------------------------------------------------
--- 7. LẦN LÀM BÀI (ATTEMPT) - SCORE là cột bình thường, cập nhật qua TRIGGER
+-- 7. LẦN LÀM BÀI (ATTEMPT)
 -- ------------------------------------------------------------
 CREATE TABLE Attempt (
     attempt_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -212,13 +211,13 @@ CREATE TABLE Attempt (
     test_id INT NOT NULL,
     student_id INT NOT NULL,
     score DECIMAL(7,2) DEFAULT 0 COMMENT 'Điểm tổng, được tính và cập nhật tự động bởi trigger',
-    CONSTRAINT chk_attempt_timer CHECK (timer IS NULL OR timer >= 0),
-    CONSTRAINT chk_attempt_score CHECK (score >= 0),
     FOREIGN KEY (test_id) REFERENCES Test(test_id) ON DELETE CASCADE,
-    FOREIGN KEY (student_id) REFERENCES Student(id) ON DELETE CASCADE
+    FOREIGN KEY (student_id) REFERENCES Student(id) ON DELETE CASCADE,
+    CONSTRAINT chk_attempt_timer CHECK (timer IS NULL OR timer >= 0),
+    CONSTRAINT chk_attempt_score CHECK (score >= 0)
 );
 
--- Bảng lưu câu trả lời của sinh viên (đã thêm UNIQUE và khóa ngoại kép)
+-- Bảng lưu câu trả lời của sinh viên
 CREATE TABLE Student_answer (
     ans_id INT AUTO_INCREMENT PRIMARY KEY,
     attempt_id INT NOT NULL,
@@ -228,13 +227,13 @@ CREATE TABLE Student_answer (
     score_awarded DECIMAL(5,2) DEFAULT NULL COMMENT 'Điểm giáo viên chấm cho câu tự luận',
     FOREIGN KEY (attempt_id) REFERENCES Attempt(attempt_id) ON DELETE CASCADE,
     FOREIGN KEY (question_id) REFERENCES Question(question_id) ON DELETE CASCADE,
-    -- Khóa ngoại kép đảm bảo choice_id thuộc đúng question_id
     FOREIGN KEY (question_id, choice_id) REFERENCES Choice(question_id, choice_id) ON DELETE CASCADE,
     CONSTRAINT uq_student_answer UNIQUE (attempt_id, question_id),
     CONSTRAINT chk_answer CHECK (
         (choice_id IS NOT NULL AND answer_text IS NULL) OR
         (choice_id IS NULL AND answer_text IS NOT NULL)
-    )
+    ),
+    CONSTRAINT chk_score_awarded CHECK (score_awarded IS NULL OR score_awarded >= 0)
 );
 
 -- ------------------------------------------------------------
@@ -263,11 +262,11 @@ CREATE TABLE Comment (
 );
 
 -- ------------------------------------------------------------
--- 9. TRIGGER & HÀM HỖ TRỢ TÍNH ĐIỂM (THAY THẾ GENERATED COLUMN)
+-- 9. TRIGGER & HÀM HỖ TRỢ TÍNH ĐIỂM
 -- ------------------------------------------------------------
 DELIMITER //
 
--- Hàm tính điểm cho một attempt
+-- Hàm tính điểm cho một attempt (CHỈ TÍNH CÂU HỎI CÓ TRONG TEST_QUESTION)
 CREATE FUNCTION calculate_score(p_attempt_id INT) RETURNS DECIMAL(7,2)
 DETERMINISTIC
 READS SQL DATA
@@ -284,7 +283,8 @@ BEGIN
     FROM Student_answer sa
     JOIN Question q ON sa.question_id = q.question_id
     JOIN Attempt a ON sa.attempt_id = a.attempt_id
-    LEFT JOIN Test_Question tq ON tq.test_id = a.test_id AND tq.question_id = sa.question_id
+    -- Sửa từ LEFT JOIN thành INNER JOIN để đảm bảo câu hỏi phải có trong Test_Question
+    JOIN Test_Question tq ON tq.test_id = a.test_id AND tq.question_id = sa.question_id
     LEFT JOIN Choice c ON sa.choice_id = c.choice_id
     WHERE sa.attempt_id = p_attempt_id
       AND (
@@ -320,7 +320,7 @@ BEGIN
     WHERE attempt_id = OLD.attempt_id;
 END//
 
--- Trigger kiểm tra thời gian làm bài (đã thêm BEFORE UPDATE)
+-- Trigger kiểm tra thời gian làm bài
 CREATE TRIGGER trg_check_attempt_time_insert
 BEFORE INSERT ON Attempt
 FOR EACH ROW
@@ -360,7 +360,7 @@ END//
 DELIMITER ;
 
 -- ------------------------------------------------------------
--- 10. DỮ LIỆU MẪU (Đã điều chỉnh cho phù hợp với schema mới)
+-- 10. DỮ LIỆU MẪU
 -- ------------------------------------------------------------
 -- Role
 INSERT INTO Role (role_name) VALUES ('Student'), ('Lecturer'), ('Admin'), ('Teaching Assistant'), ('Guest');
@@ -412,7 +412,7 @@ INSERT INTO Lecturer (id, l_msgv) VALUES (6, 'GV001'), (7, 'GV002'), (8, 'GV003'
 -- Admin
 INSERT INTO Admin (id, a_msqt) VALUES (9, 'AD001'), (10, 'AD002');
 
--- User_acc (mật khẩu để plaintext cho mục đích demo - không dùng trong production)
+-- User_acc
 INSERT INTO User_acc (ua_id, ua_username, ua_password, ua_image, role_id) VALUES
 (1, 'an.nguyen', 'pass123', NULL, 1),
 (2, 'binh.tran', 'pass123', NULL, 1),
