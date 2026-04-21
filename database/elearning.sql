@@ -175,7 +175,8 @@ CREATE TABLE Question (
     question_id INT AUTO_INCREMENT PRIMARY KEY,
     question_type ENUM('multiple_choice', 'true_false', 'essay') NOT NULL,
     question_content TEXT NOT NULL,
-    max_score DECIMAL(5,2) DEFAULT 1.0 NOT NULL COMMENT 'Điểm tối đa mặc định của câu hỏi'
+    max_score DECIMAL(5,2) DEFAULT 1.0 NOT NULL COMMENT 'Điểm tối đa mặc định của câu hỏi',
+    CONSTRAINT chk_question_max_score_positive CHECK (max_score > 0)
 );
 
 -- Bảng trung gian: liên kết câu hỏi với bài test và gán điểm tùy chỉnh
