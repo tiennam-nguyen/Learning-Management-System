@@ -1,7 +1,7 @@
 -- ============================================================
 -- DATABASE: ELearningDB
 -- MÔ TẢ: Hệ thống quản lý học tập (LMS)
--- PHIÊN BẢN: 2.2 (Đã sửa tất cả lỗi từ Copilot review: CHECK constraints, logic tính điểm)
+-- PHIÊN BẢN: 2.3 (Hoàn thiện ràng buộc và trigger xác thực dữ liệu)
 -- ============================================================
 
 DROP DATABASE IF EXISTS ELearningDB;
@@ -196,7 +196,8 @@ CREATE TABLE Choice (
     choice_content TEXT NOT NULL,
     is_true BOOLEAN DEFAULT FALSE,
     FOREIGN KEY (question_id) REFERENCES Question(question_id) ON DELETE CASCADE,
-    UNIQUE KEY uq_choice_question (question_id, choice_id)
+    -- Chỉ cần index cho khóa ngoại kép, không cần UNIQUE
+    INDEX idx_choice_question (question_id, choice_id)
 );
 
 -- ------------------------------------------------------------
@@ -262,7 +263,7 @@ CREATE TABLE Comment (
 );
 
 -- ------------------------------------------------------------
--- 9. TRIGGER & HÀM HỖ TRỢ TÍNH ĐIỂM
+-- 9. TRIGGER & HÀM HỖ TRỢ
 -- ------------------------------------------------------------
 DELIMITER //
 
@@ -283,7 +284,6 @@ BEGIN
     FROM Student_answer sa
     JOIN Question q ON sa.question_id = q.question_id
     JOIN Attempt a ON sa.attempt_id = a.attempt_id
-    -- Sửa từ LEFT JOIN thành INNER JOIN để đảm bảo câu hỏi phải có trong Test_Question
     JOIN Test_Question tq ON tq.test_id = a.test_id AND tq.question_id = sa.question_id
     LEFT JOIN Choice c ON sa.choice_id = c.choice_id
     WHERE sa.attempt_id = p_attempt_id
@@ -318,6 +318,90 @@ FOR EACH ROW
 BEGIN
     UPDATE Attempt SET score = calculate_score(OLD.attempt_id)
     WHERE attempt_id = OLD.attempt_id;
+END//
+
+-- Trigger xác thực dữ liệu Student_answer trước khi chèn hoặc cập nhật
+CREATE TRIGGER trg_validate_student_answer
+BEFORE INSERT ON Student_answer
+FOR EACH ROW
+BEGIN
+    DECLARE v_question_type VARCHAR(20);
+    DECLARE v_test_id INT;
+    
+    -- Lấy loại câu hỏi
+    SELECT question_type INTO v_question_type
+    FROM Question WHERE question_id = NEW.question_id;
+    
+    -- Lấy test_id từ attempt
+    SELECT test_id INTO v_test_id
+    FROM Attempt WHERE attempt_id = NEW.attempt_id;
+    
+    -- Kiểm tra câu hỏi có thuộc bài test không
+    IF NOT EXISTS (
+        SELECT 1 FROM Test_Question
+        WHERE test_id = v_test_id AND question_id = NEW.question_id
+    ) THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Câu hỏi không thuộc bài kiểm tra này.';
+    END IF;
+    
+    -- Kiểm tra tính nhất quán giữa loại câu hỏi và dữ liệu trả lời
+    IF v_question_type IN ('multiple_choice', 'true_false') THEN
+        IF NEW.choice_id IS NULL OR NEW.answer_text IS NOT NULL THEN
+            SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Câu hỏi trắc nghiệm phải có choice_id và không có answer_text.';
+        END IF;
+        -- score_awarded không được tự điền cho trắc nghiệm
+        IF NEW.score_awarded IS NOT NULL THEN
+            SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Không thể tự gán điểm cho câu hỏi trắc nghiệm.';
+        END IF;
+    ELSEIF v_question_type = 'essay' THEN
+        IF NEW.choice_id IS NOT NULL OR NEW.answer_text IS NULL THEN
+            SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Câu hỏi tự luận phải có answer_text và không có choice_id.';
+        END IF;
+        -- score_awarded có thể NULL (chưa chấm) hoặc >=0
+    END IF;
+END//
+
+CREATE TRIGGER trg_validate_student_answer_update
+BEFORE UPDATE ON Student_answer
+FOR EACH ROW
+BEGIN
+    -- Sử dụng lại logic tương tự trigger INSERT
+    DECLARE v_question_type VARCHAR(20);
+    DECLARE v_test_id INT;
+    
+    SELECT question_type INTO v_question_type
+    FROM Question WHERE question_id = NEW.question_id;
+    
+    SELECT test_id INTO v_test_id
+    FROM Attempt WHERE attempt_id = NEW.attempt_id;
+    
+    IF NOT EXISTS (
+        SELECT 1 FROM Test_Question
+        WHERE test_id = v_test_id AND question_id = NEW.question_id
+    ) THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Câu hỏi không thuộc bài kiểm tra này.';
+    END IF;
+    
+    IF v_question_type IN ('multiple_choice', 'true_false') THEN
+        IF NEW.choice_id IS NULL OR NEW.answer_text IS NOT NULL THEN
+            SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Câu hỏi trắc nghiệm phải có choice_id và không có answer_text.';
+        END IF;
+        IF NEW.score_awarded IS NOT NULL THEN
+            SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Không thể tự gán điểm cho câu hỏi trắc nghiệm.';
+        END IF;
+    ELSEIF v_question_type = 'essay' THEN
+        IF NEW.choice_id IS NOT NULL OR NEW.answer_text IS NULL THEN
+            SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'Câu hỏi tự luận phải có answer_text và không có choice_id.';
+        END IF;
+    END IF;
 END//
 
 -- Trigger kiểm tra thời gian làm bài
