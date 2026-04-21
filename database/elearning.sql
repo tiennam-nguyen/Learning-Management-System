@@ -212,6 +212,8 @@ CREATE TABLE Attempt (
     test_id INT NOT NULL,
     student_id INT NOT NULL,
     score DECIMAL(7,2) DEFAULT 0 COMMENT 'Điểm tổng, được tính và cập nhật tự động bởi trigger',
+    CONSTRAINT chk_attempt_timer CHECK (timer IS NULL OR timer >= 0),
+    CONSTRAINT chk_attempt_score CHECK (score >= 0),
     FOREIGN KEY (test_id) REFERENCES Test(test_id) ON DELETE CASCADE,
     FOREIGN KEY (student_id) REFERENCES Student(id) ON DELETE CASCADE
 );
