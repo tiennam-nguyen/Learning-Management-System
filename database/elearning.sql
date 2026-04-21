@@ -1,7 +1,7 @@
 -- ============================================================
 -- DATABASE: ELearningDB
 -- MÔ TẢ: Hệ thống quản lý học tập (LMS)
--- PHIÊN BẢN: 2.6 (Cho phép bỏ trống câu trả lời trong Student_answer)
+-- PHIÊN BẢN: 2.7.1 (Hoàn thiện sửa lỗi dữ liệu và trigger)
 -- ============================================================
 
 DROP DATABASE IF EXISTS ELearningDB;
@@ -209,7 +209,7 @@ CREATE TABLE Attempt (
     CONSTRAINT chk_attempt_score CHECK (score >= 0)
 );
 
--- Bảng lưu câu trả lời của sinh viên (đã sửa ràng buộc cho phép bỏ trống)
+-- Bảng lưu câu trả lời của sinh viên
 CREATE TABLE Student_answer (
     ans_id INT AUTO_INCREMENT PRIMARY KEY,
     attempt_id INT NOT NULL,
@@ -221,7 +221,6 @@ CREATE TABLE Student_answer (
     FOREIGN KEY (question_id) REFERENCES Question(question_id) ON DELETE CASCADE,
     FOREIGN KEY (question_id, choice_id) REFERENCES Choice(question_id, choice_id) ON DELETE CASCADE,
     CONSTRAINT uq_student_answer UNIQUE (attempt_id, question_id),
-    -- Cho phép cả hai cùng NULL (bỏ trống), hoặc một trong hai có giá trị
     CONSTRAINT chk_answer CHECK (
         (choice_id IS NULL AND answer_text IS NULL) OR
         (choice_id IS NOT NULL AND answer_text IS NULL) OR
@@ -333,7 +332,6 @@ BEGIN
     END IF;
     
     IF v_question_type IN ('multiple_choice', 'true_false') THEN
-        -- Nếu sinh viên có chọn đáp án thì choice_id phải không NULL và answer_text NULL
         IF NEW.choice_id IS NOT NULL AND NEW.answer_text IS NOT NULL THEN
             SIGNAL SQLSTATE '45000'
             SET MESSAGE_TEXT = 'Câu hỏi trắc nghiệm chỉ được có choice_id hoặc bỏ trống, không được có answer_text.';
@@ -343,7 +341,6 @@ BEGIN
             SET MESSAGE_TEXT = 'Không thể tự gán điểm cho câu hỏi trắc nghiệm.';
         END IF;
     ELSEIF v_question_type = 'essay' THEN
-        -- Nếu sinh viên có trả lời tự luận thì answer_text phải không NULL và choice_id NULL
         IF NEW.choice_id IS NOT NULL AND NEW.answer_text IS NOT NULL THEN
             SIGNAL SQLSTATE '45000'
             SET MESSAGE_TEXT = 'Câu hỏi tự luận chỉ được có answer_text hoặc bỏ trống, không được có choice_id.';
@@ -419,7 +416,7 @@ BEGIN
         SET MESSAGE_TEXT = 'Sinh viên chưa đăng ký lớp học này.';
     END IF;
     
-    IF NEW.timer IS NOT NULL AND NEW.timer > (test_timer_mins * 60) THEN
+    IF test_timer_mins > 0 AND NEW.timer IS NOT NULL AND NEW.timer > (test_timer_mins * 60) THEN
         SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'Thời gian làm bài vượt quá thời gian quy định của bài kiểm tra.';
     END IF;
@@ -455,7 +452,7 @@ BEGIN
         SET MESSAGE_TEXT = 'Sinh viên chưa đăng ký lớp học này.';
     END IF;
     
-    IF NEW.timer IS NOT NULL AND NEW.timer > (test_timer_mins * 60) THEN
+    IF test_timer_mins > 0 AND NEW.timer IS NOT NULL AND NEW.timer > (test_timer_mins * 60) THEN
         SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'Thời gian làm bài vượt quá thời gian quy định của bài kiểm tra.';
     END IF;
@@ -492,7 +489,7 @@ END//
 DELIMITER ;
 
 -- ------------------------------------------------------------
--- 10. DỮ LIỆU MẪU (ĐẦY ĐỦ)
+-- 10. DỮ LIỆU MẪU (ĐÃ SỬA HOÀN TOÀN)
 -- ------------------------------------------------------------
 -- Status
 INSERT INTO Status (status_display) VALUES
@@ -538,16 +535,16 @@ INSERT INTO User (firstName, middleName, lastName, sex, email, birthday, nationa
 ('Phan', 'Van', 'Tuan', 'Male', 'tuan.phan@hcmut.edu.vn', '1982-05-09', 'Vietnam'),
 ('Vu', 'Thi', 'Van', 'Female', 'van.vu@hcmut.edu.vn', '1991-12-30', 'Vietnam');
 
--- Student (5 dòng)
+-- Student
 INSERT INTO Student (id, s_mssv) VALUES
 (1, 'SV001'), (2, 'SV002'), (3, 'SV003'), (4, 'SV004'), (5, 'SV005');
 
--- Lecturer (5 dòng)
+-- Lecturer
 INSERT INTO Lecturer (id, l_msgv) VALUES
 (6, 'GV001'), (7, 'GV002'), (8, 'GV003'),
 (11, 'GV004'), (12, 'GV005');
 
--- Admin (5 dòng)
+-- Admin
 INSERT INTO Admin (id, a_msqt) VALUES
 (9, 'AD001'), (10, 'AD002'),
 (13, 'AD003'), (14, 'AD004'), (15, 'AD005');
@@ -570,7 +567,7 @@ INSERT INTO User_acc (ua_id, ua_username, ua_password, ua_image) VALUES
 (14, 'tuan.phan', 'adminpass', NULL),
 (15, 'van.vu', 'adminpass', NULL);
 
--- Class (5 lớp)
+-- Class
 INSERT INTO Class (class_name, subject_id, semester_id, status_id, lecturer_id) VALUES
 ('DB-2025-01', 1, 1, 1, 6),
 ('DS-2025-01', 2, 1, 1, 7),
@@ -611,23 +608,34 @@ INSERT INTO File (class_id, chapter_id, topic_id, file_id, file_name, file_path)
 (3,2,2,1,'kcl_simulation.mp4','/files/kcl_simulation.mp4'),
 (4,1,2,1,'thermo_lab.pdf','/files/thermo_lab.pdf');
 
--- Test (5 bài)
+-- Test: Thêm đủ 10 bài để phục vụ Quiz và File_submission
 INSERT INTO Test (test_name, test_start, test_end, test_timer, class_id, chapter_id) VALUES
-('Midterm DB', '2025-03-15 09:00:00', '2025-03-15 10:30:00', 90, 1, 1),
-('Quiz 1 DS', '2025-03-20 10:00:00', '2025-03-20 10:30:00', 30, 2, 1),
-('Final Circuit', '2025-05-10 13:00:00', '2025-05-10 15:00:00', 120, 3, NULL),
-('Thermo Assignment', '2025-04-01 00:00:00', '2025-04-07 23:59:59', 0, 4, NULL),
-('Struct Quiz', '2025-03-25 08:00:00', '2025-03-25 08:45:00', 45, 5, 2);
+('Midterm DB', '2025-03-15 09:00:00', '2025-03-15 10:30:00', 90, 1, 1),          -- test_id=1
+('Quiz 1 DS', '2025-03-20 10:00:00', '2025-03-20 10:30:00', 30, 2, 1),           -- test_id=2
+('Final Circuit', '2025-05-10 13:00:00', '2025-05-10 15:00:00', 120, 3, NULL),   -- test_id=3
+('Thermo Assignment', '2025-04-01 00:00:00', '2025-04-07 23:59:59', 0, 4, NULL), -- test_id=4
+('Struct Quiz', '2025-03-25 08:00:00', '2025-03-25 08:45:00', 45, 5, 2),         -- test_id=5
+('Quiz 2 DB', '2025-04-10 09:00:00', '2025-04-10 10:00:00', 60, 1, 2),           -- test_id=6
+('Quiz 3 DS', '2025-04-15 10:00:00', '2025-04-15 10:45:00', 45, 2, 2),           -- test_id=7
+('Assignment 2 Circuit', '2025-05-01 00:00:00', '2025-05-05 23:59:59', 0, 3, NULL), -- test_id=8
+('Project DB', '2025-05-20 00:00:00', '2025-06-01 23:59:59', 0, 1, NULL),        -- test_id=9
+('Final Exam DS', '2025-06-10 09:00:00', '2025-06-10 11:30:00', 150, 2, NULL);   -- test_id=10
 
--- Quiz (5 dòng)
+-- Quiz: 5 dòng không trùng test_id (1,2,6,7,3)
 INSERT INTO Quiz (test_id, quizz_id) VALUES
-(1, 'QZ001'), (2, 'QZ002'), (1, 'QZ003'), (3, 'QZ004'), (5, 'QZ005');
+(1, 'QZ001'),
+(2, 'QZ002'),
+(6, 'QZ003'),
+(7, 'QZ004'),
+(3, 'QZ005');
 
--- File_submission (5 dòng)
+-- File_submission: 5 dòng không trùng test_id (4,5,8,9,10)
 INSERT INTO File_submission (test_id, fs_id, path) VALUES
-(4, 'FS001', '/submissions/'), (5, 'FS002', '/submissions/'),
-(4, 'FS003', '/submissions/'), (5, 'FS004', '/submissions/'),
-(4, 'FS005', '/submissions/');
+(4, 'FS001', '/submissions/'),
+(5, 'FS002', '/submissions/'),
+(8, 'FS003', '/submissions/'),
+(9, 'FS004', '/submissions/'),
+(10, 'FS005', '/submissions/');
 
 -- Question
 INSERT INTO Question (question_type, question_content, max_score) VALUES
@@ -648,15 +656,15 @@ INSERT INTO Choice (question_id, choice_content, is_true) VALUES
 INSERT INTO Test_Question (test_id, question_id, custom_score) VALUES
 (1, 1, NULL), (1, 2, NULL), (2, 3, 2.5), (3, 4, NULL), (4, 5, NULL);
 
--- Attempt (5 dòng)
+-- Attempt: Đã sửa lỗi student_id và thời gian
 INSERT INTO Attempt (attempt_index, start_time, end_time, timer, test_id, student_id) VALUES
 (1, '2025-03-15 09:05:00', '2025-03-15 10:20:00', 4500, 1, 1),
-(1, '2025-03-20 10:02:00', '2025-03-20 10:28:00', 1560, 2, 2),
+(1, '2025-03-20 10:02:00', '2025-03-20 10:28:00', 1560, 2, 3),   -- sửa student_id=3 (đã học lớp 2)
 (1, '2025-03-15 09:10:00', '2025-03-15 10:25:00', 4500, 1, 3),
-(2, '2025-03-16 14:00:00', '2025-03-16 15:30:00', 5400, 1, 1),
+(2, '2025-03-15 14:00:00', '2025-03-15 15:30:00', 5400, 1, 1),   -- sửa ngày về 2025-03-15
 (1, '2025-03-26 08:05:00', '2025-03-26 08:40:00', 2100, 5, 4);
 
--- Student_answer (có thể thêm bản ghi bỏ trống nếu muốn test)
+-- Student_answer
 INSERT INTO Student_answer (attempt_id, question_id, choice_id, answer_text, score_awarded) VALUES
 (1, 1, 1, NULL, NULL),
 (1, 2, 4, NULL, NULL),
@@ -675,7 +683,7 @@ INSERT INTO Post (post_name, post_description, post_start, ua_id, class_id) VALU
 ('Quiz reminder', 'Next Monday', '2025-03-19 08:00:00', 7, 2),
 ('Project groups', 'Form groups of 3', NOW(), 8, 3);
 
--- Comment (5 dòng)
+-- Comment
 INSERT INTO Comment (comment_content, post_id, ua_id) VALUES
 ('Thanks!', 1, 2),
 ('When is deadline?', 2, 3),
