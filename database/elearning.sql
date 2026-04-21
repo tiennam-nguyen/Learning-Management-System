@@ -1,7 +1,7 @@
 -- ============================================================
 -- DATABASE: ELearningDB
 -- MÔ TẢ: Hệ thống quản lý học tập (LMS)
--- PHIÊN BẢN: 2.3 (Hoàn thiện ràng buộc và trigger xác thực dữ liệu)
+-- PHIÊN BẢN: 2.6 (Cho phép bỏ trống câu trả lời trong Student_answer)
 -- ============================================================
 
 DROP DATABASE IF EXISTS ELearningDB;
@@ -11,11 +11,6 @@ USE ELearningDB;
 -- ------------------------------------------------------------
 -- 1. DANH MỤC CƠ SỞ
 -- ------------------------------------------------------------
-CREATE TABLE Role (
-    role_id INT AUTO_INCREMENT PRIMARY KEY,
-    role_name VARCHAR(50) NOT NULL UNIQUE
-);
-
 CREATE TABLE Status (
     status_id INT AUTO_INCREMENT PRIMARY KEY,
     status_display VARCHAR(50) NOT NULL UNIQUE
@@ -77,9 +72,7 @@ CREATE TABLE User_acc (
     ua_username VARCHAR(50) UNIQUE NOT NULL,
     ua_password VARCHAR(255) NOT NULL,
     ua_image VARCHAR(255),
-    role_id INT NOT NULL,
-    FOREIGN KEY (ua_id) REFERENCES User(id) ON DELETE CASCADE,
-    FOREIGN KEY (role_id) REFERENCES Role(role_id)
+    FOREIGN KEY (ua_id) REFERENCES User(id) ON DELETE CASCADE
 );
 
 -- ------------------------------------------------------------
@@ -179,7 +172,6 @@ CREATE TABLE Question (
     CONSTRAINT chk_question_max_score_positive CHECK (max_score > 0)
 );
 
--- Bảng trung gian: liên kết câu hỏi với bài test và gán điểm tùy chỉnh
 CREATE TABLE Test_Question (
     test_id INT NOT NULL,
     question_id INT NOT NULL,
@@ -196,7 +188,6 @@ CREATE TABLE Choice (
     choice_content TEXT NOT NULL,
     is_true BOOLEAN DEFAULT FALSE,
     FOREIGN KEY (question_id) REFERENCES Question(question_id) ON DELETE CASCADE,
-    -- Chỉ cần index cho khóa ngoại kép, không cần UNIQUE
     INDEX idx_choice_question (question_id, choice_id)
 );
 
@@ -218,7 +209,7 @@ CREATE TABLE Attempt (
     CONSTRAINT chk_attempt_score CHECK (score >= 0)
 );
 
--- Bảng lưu câu trả lời của sinh viên
+-- Bảng lưu câu trả lời của sinh viên (đã sửa ràng buộc cho phép bỏ trống)
 CREATE TABLE Student_answer (
     ans_id INT AUTO_INCREMENT PRIMARY KEY,
     attempt_id INT NOT NULL,
@@ -230,7 +221,9 @@ CREATE TABLE Student_answer (
     FOREIGN KEY (question_id) REFERENCES Question(question_id) ON DELETE CASCADE,
     FOREIGN KEY (question_id, choice_id) REFERENCES Choice(question_id, choice_id) ON DELETE CASCADE,
     CONSTRAINT uq_student_answer UNIQUE (attempt_id, question_id),
+    -- Cho phép cả hai cùng NULL (bỏ trống), hoặc một trong hai có giá trị
     CONSTRAINT chk_answer CHECK (
+        (choice_id IS NULL AND answer_text IS NULL) OR
         (choice_id IS NOT NULL AND answer_text IS NULL) OR
         (choice_id IS NULL AND answer_text IS NOT NULL)
     ),
@@ -267,7 +260,6 @@ CREATE TABLE Comment (
 -- ------------------------------------------------------------
 DELIMITER //
 
--- Hàm tính điểm cho một attempt (CHỈ TÍNH CÂU HỎI CÓ TRONG TEST_QUESTION)
 CREATE FUNCTION calculate_score(p_attempt_id INT) RETURNS DECIMAL(7,2)
 DETERMINISTIC
 READS SQL DATA
@@ -295,7 +287,6 @@ BEGIN
     RETURN total;
 END//
 
--- Trigger cập nhật điểm sau khi thêm/sửa/xóa Student_answer
 CREATE TRIGGER trg_update_score_after_insert
 AFTER INSERT ON Student_answer
 FOR EACH ROW
@@ -320,7 +311,6 @@ BEGIN
     WHERE attempt_id = OLD.attempt_id;
 END//
 
--- Trigger xác thực dữ liệu Student_answer trước khi chèn hoặc cập nhật
 CREATE TRIGGER trg_validate_student_answer
 BEFORE INSERT ON Student_answer
 FOR EACH ROW
@@ -328,15 +318,12 @@ BEGIN
     DECLARE v_question_type VARCHAR(20);
     DECLARE v_test_id INT;
     
-    -- Lấy loại câu hỏi
     SELECT question_type INTO v_question_type
     FROM Question WHERE question_id = NEW.question_id;
     
-    -- Lấy test_id từ attempt
     SELECT test_id INTO v_test_id
     FROM Attempt WHERE attempt_id = NEW.attempt_id;
     
-    -- Kiểm tra câu hỏi có thuộc bài test không
     IF NOT EXISTS (
         SELECT 1 FROM Test_Question
         WHERE test_id = v_test_id AND question_id = NEW.question_id
@@ -345,23 +332,22 @@ BEGIN
         SET MESSAGE_TEXT = 'Câu hỏi không thuộc bài kiểm tra này.';
     END IF;
     
-    -- Kiểm tra tính nhất quán giữa loại câu hỏi và dữ liệu trả lời
     IF v_question_type IN ('multiple_choice', 'true_false') THEN
-        IF NEW.choice_id IS NULL OR NEW.answer_text IS NOT NULL THEN
+        -- Nếu sinh viên có chọn đáp án thì choice_id phải không NULL và answer_text NULL
+        IF NEW.choice_id IS NOT NULL AND NEW.answer_text IS NOT NULL THEN
             SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'Câu hỏi trắc nghiệm phải có choice_id và không có answer_text.';
+            SET MESSAGE_TEXT = 'Câu hỏi trắc nghiệm chỉ được có choice_id hoặc bỏ trống, không được có answer_text.';
         END IF;
-        -- score_awarded không được tự điền cho trắc nghiệm
         IF NEW.score_awarded IS NOT NULL THEN
             SIGNAL SQLSTATE '45000'
             SET MESSAGE_TEXT = 'Không thể tự gán điểm cho câu hỏi trắc nghiệm.';
         END IF;
     ELSEIF v_question_type = 'essay' THEN
-        IF NEW.choice_id IS NOT NULL OR NEW.answer_text IS NULL THEN
+        -- Nếu sinh viên có trả lời tự luận thì answer_text phải không NULL và choice_id NULL
+        IF NEW.choice_id IS NOT NULL AND NEW.answer_text IS NOT NULL THEN
             SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'Câu hỏi tự luận phải có answer_text và không có choice_id.';
+            SET MESSAGE_TEXT = 'Câu hỏi tự luận chỉ được có answer_text hoặc bỏ trống, không được có choice_id.';
         END IF;
-        -- score_awarded có thể NULL (chưa chấm) hoặc >=0
     END IF;
 END//
 
@@ -369,7 +355,6 @@ CREATE TRIGGER trg_validate_student_answer_update
 BEFORE UPDATE ON Student_answer
 FOR EACH ROW
 BEGIN
-    -- Sử dụng lại logic tương tự trigger INSERT
     DECLARE v_question_type VARCHAR(20);
     DECLARE v_test_id INT;
     
@@ -388,31 +373,35 @@ BEGIN
     END IF;
     
     IF v_question_type IN ('multiple_choice', 'true_false') THEN
-        IF NEW.choice_id IS NULL OR NEW.answer_text IS NOT NULL THEN
+        IF NEW.choice_id IS NOT NULL AND NEW.answer_text IS NOT NULL THEN
             SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'Câu hỏi trắc nghiệm phải có choice_id và không có answer_text.';
+            SET MESSAGE_TEXT = 'Câu hỏi trắc nghiệm chỉ được có choice_id hoặc bỏ trống, không được có answer_text.';
         END IF;
         IF NEW.score_awarded IS NOT NULL THEN
             SIGNAL SQLSTATE '45000'
             SET MESSAGE_TEXT = 'Không thể tự gán điểm cho câu hỏi trắc nghiệm.';
         END IF;
     ELSEIF v_question_type = 'essay' THEN
-        IF NEW.choice_id IS NOT NULL OR NEW.answer_text IS NULL THEN
+        IF NEW.choice_id IS NOT NULL AND NEW.answer_text IS NOT NULL THEN
             SIGNAL SQLSTATE '45000'
-            SET MESSAGE_TEXT = 'Câu hỏi tự luận phải có answer_text và không có choice_id.';
+            SET MESSAGE_TEXT = 'Câu hỏi tự luận chỉ được có answer_text hoặc bỏ trống, không được có choice_id.';
         END IF;
     END IF;
 END//
 
--- Trigger kiểm tra thời gian làm bài
 CREATE TRIGGER trg_check_attempt_time_insert
 BEFORE INSERT ON Attempt
 FOR EACH ROW
 BEGIN
     DECLARE test_start_dt DATETIME;
     DECLARE test_end_dt DATETIME;
-    SELECT test_start, test_end INTO test_start_dt, test_end_dt
+    DECLARE test_timer_mins INT;
+    DECLARE class_id_val INT;
+    
+    SELECT test_start, test_end, test_timer, class_id
+    INTO test_start_dt, test_end_dt, test_timer_mins, class_id_val
     FROM Test WHERE test_id = NEW.test_id;
+    
     IF NEW.start_time < test_start_dt OR NEW.start_time > test_end_dt THEN
         SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'Thời gian bắt đầu làm bài không hợp lệ.';
@@ -420,6 +409,19 @@ BEGIN
     IF NEW.end_time IS NOT NULL AND NEW.end_time > test_end_dt THEN
         SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'Thời gian kết thúc vượt quá thời gian cho phép.';
+    END IF;
+    
+    IF NOT EXISTS (
+        SELECT 1 FROM Enrollment
+        WHERE student_id = NEW.student_id AND class_id = class_id_val
+    ) THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Sinh viên chưa đăng ký lớp học này.';
+    END IF;
+    
+    IF NEW.timer IS NOT NULL AND NEW.timer > (test_timer_mins * 60) THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Thời gian làm bài vượt quá thời gian quy định của bài kiểm tra.';
     END IF;
 END//
 
@@ -429,8 +431,13 @@ FOR EACH ROW
 BEGIN
     DECLARE test_start_dt DATETIME;
     DECLARE test_end_dt DATETIME;
-    SELECT test_start, test_end INTO test_start_dt, test_end_dt
+    DECLARE test_timer_mins INT;
+    DECLARE class_id_val INT;
+    
+    SELECT test_start, test_end, test_timer, class_id
+    INTO test_start_dt, test_end_dt, test_timer_mins, class_id_val
     FROM Test WHERE test_id = NEW.test_id;
+    
     IF NEW.start_time < test_start_dt OR NEW.start_time > test_end_dt THEN
         SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'Thời gian bắt đầu làm bài không hợp lệ.';
@@ -439,18 +446,57 @@ BEGIN
         SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'Thời gian kết thúc vượt quá thời gian cho phép.';
     END IF;
+    
+    IF NOT EXISTS (
+        SELECT 1 FROM Enrollment
+        WHERE student_id = NEW.student_id AND class_id = class_id_val
+    ) THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Sinh viên chưa đăng ký lớp học này.';
+    END IF;
+    
+    IF NEW.timer IS NOT NULL AND NEW.timer > (test_timer_mins * 60) THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Thời gian làm bài vượt quá thời gian quy định của bài kiểm tra.';
+    END IF;
+END//
+
+CREATE TRIGGER trg_prevent_choice_for_essay
+BEFORE INSERT ON Choice
+FOR EACH ROW
+BEGIN
+    DECLARE v_question_type VARCHAR(20);
+    SELECT question_type INTO v_question_type
+    FROM Question WHERE question_id = NEW.question_id;
+    
+    IF v_question_type = 'essay' THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Không thể thêm lựa chọn cho câu hỏi tự luận.';
+    END IF;
+END//
+
+CREATE TRIGGER trg_prevent_choice_for_essay_update
+BEFORE UPDATE ON Choice
+FOR EACH ROW
+BEGIN
+    DECLARE v_question_type VARCHAR(20);
+    SELECT question_type INTO v_question_type
+    FROM Question WHERE question_id = NEW.question_id;
+    
+    IF v_question_type = 'essay' THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Không thể cập nhật lựa chọn cho câu hỏi tự luận.';
+    END IF;
 END//
 
 DELIMITER ;
 
 -- ------------------------------------------------------------
--- 10. DỮ LIỆU MẪU
+-- 10. DỮ LIỆU MẪU (ĐẦY ĐỦ)
 -- ------------------------------------------------------------
--- Role
-INSERT INTO Role (role_name) VALUES ('Student'), ('Lecturer'), ('Admin'), ('Teaching Assistant'), ('Guest');
-
 -- Status
-INSERT INTO Status (status_display) VALUES ('Open'), ('Closed'), ('Ongoing'), ('Cancelled'), ('Completed');
+INSERT INTO Status (status_display) VALUES
+('Open'), ('Closed'), ('Ongoing'), ('Cancelled'), ('Completed');
 
 -- Semester
 INSERT INTO Semester (semester_start, semester_end) VALUES
@@ -485,37 +531,52 @@ INSERT INTO User (firstName, middleName, lastName, sex, email, birthday, nationa
 ('Dang', 'Thi', 'Lan', 'Female', 'lan.dang@hcmut.edu.vn', '1990-12-03', 'Vietnam'),
 ('Bui', 'Duc', 'Minh', 'Male', 'minh.bui@hcmut.edu.vn', '1988-04-18', 'Vietnam'),
 ('Ngo', 'Thanh', 'Nga', 'Female', 'nga.ngo@hcmut.edu.vn', '1992-06-25', 'Vietnam'),
-('Trinh', 'Van', 'Phong', 'Male', 'phong.trinh@hcmut.edu.vn', '1980-10-10', 'Vietnam');
+('Trinh', 'Van', 'Phong', 'Male', 'phong.trinh@hcmut.edu.vn', '1980-10-10', 'Vietnam'),
+('Ly', 'Thi', 'Quyen', 'Female', 'quyen.ly@hcmut.edu.vn', '1983-11-01', 'Vietnam'),
+('Mai', 'Van', 'Sang', 'Male', 'sang.mai@hcmut.edu.vn', '1987-02-14', 'Vietnam'),
+('Do', 'Thi', 'Thuy', 'Female', 'thuy.do@hcmut.edu.vn', '1995-08-20', 'Vietnam'),
+('Phan', 'Van', 'Tuan', 'Male', 'tuan.phan@hcmut.edu.vn', '1982-05-09', 'Vietnam'),
+('Vu', 'Thi', 'Van', 'Female', 'van.vu@hcmut.edu.vn', '1991-12-30', 'Vietnam');
 
--- Student
-INSERT INTO Student (id, s_mssv) VALUES (1, 'SV001'), (2, 'SV002'), (3, 'SV003'), (4, 'SV004'), (5, 'SV005');
+-- Student (5 dòng)
+INSERT INTO Student (id, s_mssv) VALUES
+(1, 'SV001'), (2, 'SV002'), (3, 'SV003'), (4, 'SV004'), (5, 'SV005');
 
--- Lecturer
-INSERT INTO Lecturer (id, l_msgv) VALUES (6, 'GV001'), (7, 'GV002'), (8, 'GV003');
+-- Lecturer (5 dòng)
+INSERT INTO Lecturer (id, l_msgv) VALUES
+(6, 'GV001'), (7, 'GV002'), (8, 'GV003'),
+(11, 'GV004'), (12, 'GV005');
 
--- Admin
-INSERT INTO Admin (id, a_msqt) VALUES (9, 'AD001'), (10, 'AD002');
+-- Admin (5 dòng)
+INSERT INTO Admin (id, a_msqt) VALUES
+(9, 'AD001'), (10, 'AD002'),
+(13, 'AD003'), (14, 'AD004'), (15, 'AD005');
 
 -- User_acc
-INSERT INTO User_acc (ua_id, ua_username, ua_password, ua_image, role_id) VALUES
-(1, 'an.nguyen', 'pass123', NULL, 1),
-(2, 'binh.tran', 'pass123', NULL, 1),
-(3, 'chau.le', 'pass123', NULL, 1),
-(4, 'duc.pham', 'pass123', NULL, 1),
-(5, 'giang.hoang', 'pass123', NULL, 1),
-(6, 'hai.vo', 'gvpass', NULL, 2),
-(7, 'lan.dang', 'gvpass', NULL, 2),
-(8, 'minh.bui', 'gvpass', NULL, 2),
-(9, 'nga.ngo', 'adminpass', NULL, 3),
-(10, 'phong.trinh', 'adminpass', NULL, 3);
+INSERT INTO User_acc (ua_id, ua_username, ua_password, ua_image) VALUES
+(1, 'an.nguyen', 'pass123', NULL),
+(2, 'binh.tran', 'pass123', NULL),
+(3, 'chau.le', 'pass123', NULL),
+(4, 'duc.pham', 'pass123', NULL),
+(5, 'giang.hoang', 'pass123', NULL),
+(6, 'hai.vo', 'gvpass', NULL),
+(7, 'lan.dang', 'gvpass', NULL),
+(8, 'minh.bui', 'gvpass', NULL),
+(9, 'nga.ngo', 'adminpass', NULL),
+(10, 'phong.trinh', 'adminpass', NULL),
+(11, 'quyen.ly', 'gvpass', NULL),
+(12, 'sang.mai', 'gvpass', NULL),
+(13, 'thuy.do', 'adminpass', NULL),
+(14, 'tuan.phan', 'adminpass', NULL),
+(15, 'van.vu', 'adminpass', NULL);
 
--- Class
+-- Class (5 lớp)
 INSERT INTO Class (class_name, subject_id, semester_id, status_id, lecturer_id) VALUES
 ('DB-2025-01', 1, 1, 1, 6),
 ('DS-2025-01', 2, 1, 1, 7),
 ('Circuit-2025-01', 3, 1, 1, 8),
-('Thermo-2025-01', 4, 1, 1, 6),
-('Struct-2025-01', 5, 1, 2, 7);
+('Thermo-2025-01', 4, 1, 1, 11),
+('Struct-2025-01', 5, 1, 2, 12);
 
 -- Enrollment
 INSERT INTO Enrollment (student_id, class_id) VALUES
@@ -550,7 +611,7 @@ INSERT INTO File (class_id, chapter_id, topic_id, file_id, file_name, file_path)
 (3,2,2,1,'kcl_simulation.mp4','/files/kcl_simulation.mp4'),
 (4,1,2,1,'thermo_lab.pdf','/files/thermo_lab.pdf');
 
--- Test
+-- Test (5 bài)
 INSERT INTO Test (test_name, test_start, test_end, test_timer, class_id, chapter_id) VALUES
 ('Midterm DB', '2025-03-15 09:00:00', '2025-03-15 10:30:00', 90, 1, 1),
 ('Quiz 1 DS', '2025-03-20 10:00:00', '2025-03-20 10:30:00', 30, 2, 1),
@@ -558,11 +619,17 @@ INSERT INTO Test (test_name, test_start, test_end, test_timer, class_id, chapter
 ('Thermo Assignment', '2025-04-01 00:00:00', '2025-04-07 23:59:59', 0, 4, NULL),
 ('Struct Quiz', '2025-03-25 08:00:00', '2025-03-25 08:45:00', 45, 5, 2);
 
--- Quiz & File_submission
-INSERT INTO Quiz (test_id, quizz_id) VALUES (1, 'QZ001'), (2, 'QZ002');
-INSERT INTO File_submission (test_id, fs_id, path) VALUES (4, 'FS001', '/submissions/'), (5, 'FS002', '/submissions/');
+-- Quiz (5 dòng)
+INSERT INTO Quiz (test_id, quizz_id) VALUES
+(1, 'QZ001'), (2, 'QZ002'), (1, 'QZ003'), (3, 'QZ004'), (5, 'QZ005');
 
--- Question (không còn test_id)
+-- File_submission (5 dòng)
+INSERT INTO File_submission (test_id, fs_id, path) VALUES
+(4, 'FS001', '/submissions/'), (5, 'FS002', '/submissions/'),
+(4, 'FS003', '/submissions/'), (5, 'FS004', '/submissions/'),
+(4, 'FS005', '/submissions/');
+
+-- Question
 INSERT INTO Question (question_type, question_content, max_score) VALUES
 ('multiple_choice', 'What is a primary key?', 1.5),
 ('true_false', 'A foreign key can be NULL.', 1.0),
@@ -577,15 +644,11 @@ INSERT INTO Choice (question_id, choice_content, is_true) VALUES
 (3, 'Array', 0), (3, 'Stack', 0), (3, 'Tree', 1),
 (5, 'Conservation of energy', 1), (5, 'Conservation of mass', 0);
 
--- Test_Question (liên kết câu hỏi vào bài test)
+-- Test_Question
 INSERT INTO Test_Question (test_id, question_id, custom_score) VALUES
-(1, 1, NULL),  -- dùng max_score 1.5
-(1, 2, NULL),  -- dùng max_score 1.0
-(2, 3, 2.5),   -- ghi đè 2.5
-(3, 4, NULL),  -- câu tự luận, dùng max_score 5.0
-(4, 5, NULL);  -- dùng max_score 1.0
+(1, 1, NULL), (1, 2, NULL), (2, 3, 2.5), (3, 4, NULL), (4, 5, NULL);
 
--- Attempt
+-- Attempt (5 dòng)
 INSERT INTO Attempt (attempt_index, start_time, end_time, timer, test_id, student_id) VALUES
 (1, '2025-03-15 09:05:00', '2025-03-15 10:20:00', 4500, 1, 1),
 (1, '2025-03-20 10:02:00', '2025-03-20 10:28:00', 1560, 2, 2),
@@ -593,7 +656,7 @@ INSERT INTO Attempt (attempt_index, start_time, end_time, timer, test_id, studen
 (2, '2025-03-16 14:00:00', '2025-03-16 15:30:00', 5400, 1, 1),
 (1, '2025-03-26 08:05:00', '2025-03-26 08:40:00', 2100, 5, 4);
 
--- Student_answer (sẽ kích hoạt trigger tính điểm)
+-- Student_answer (có thể thêm bản ghi bỏ trống nếu muốn test)
 INSERT INTO Student_answer (attempt_id, question_id, choice_id, answer_text, score_awarded) VALUES
 (1, 1, 1, NULL, NULL),
 (1, 2, 4, NULL, NULL),
@@ -604,7 +667,7 @@ INSERT INTO Student_answer (attempt_id, question_id, choice_id, answer_text, sco
 (4, 2, 5, NULL, NULL),
 (5, 5, 9, NULL, NULL);
 
--- Post & Comment
+-- Post
 INSERT INTO Post (post_name, post_description, post_start, ua_id, class_id) VALUES
 ('Welcome to DB', 'Introduction post', NOW(), 1, 1),
 ('Assignment 1', 'Submit by 15/4', '2025-04-01 00:00:00', 6, 1),
@@ -612,6 +675,7 @@ INSERT INTO Post (post_name, post_description, post_start, ua_id, class_id) VALU
 ('Quiz reminder', 'Next Monday', '2025-03-19 08:00:00', 7, 2),
 ('Project groups', 'Form groups of 3', NOW(), 8, 3);
 
+-- Comment (5 dòng)
 INSERT INTO Comment (comment_content, post_id, ua_id) VALUES
 ('Thanks!', 1, 2),
 ('When is deadline?', 2, 3),
