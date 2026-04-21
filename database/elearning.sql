@@ -1,7 +1,7 @@
 -- ============================================================
 -- DATABASE: ELearningDB
 -- MÔ TẢ: Hệ thống quản lý học tập (LMS)
--- PHIÊN BẢN: 2.0 (có điểm số động, test_question, hỗ trợ tự luận)
+-- PHIÊN BẢN: 2.1 (Đã sửa lỗi từ PR review: trigger tính điểm, quan hệ Test-Question, ràng buộc)
 -- ============================================================
 
 DROP DATABASE IF EXISTS ELearningDB;
@@ -169,22 +169,20 @@ CREATE TABLE File_submission (
 );
 
 -- ------------------------------------------------------------
--- 6. NGÂN HÀNG CÂU HỎI (có max_score mặc định)
+-- 6. NGÂN HÀNG CÂU HỎI (ĐÃ SỬA: BỎ test_id, dùng Test_Question làm liên kết N-N)
 -- ------------------------------------------------------------
 CREATE TABLE Question (
     question_id INT AUTO_INCREMENT PRIMARY KEY,
     question_type ENUM('multiple_choice', 'true_false', 'essay') NOT NULL,
     question_content TEXT NOT NULL,
-    max_score DECIMAL(5,2) DEFAULT 1.0 NOT NULL COMMENT 'Điểm tối đa mặc định của câu hỏi',
-    test_id INT NOT NULL,
-    FOREIGN KEY (test_id) REFERENCES Test(test_id) ON DELETE CASCADE
+    max_score DECIMAL(5,2) DEFAULT 1.0 NOT NULL COMMENT 'Điểm tối đa mặc định của câu hỏi'
 );
 
--- Bảng trung gian: gán điểm cụ thể cho câu hỏi trong từng bài test
+-- Bảng trung gian: liên kết câu hỏi với bài test và gán điểm tùy chỉnh
 CREATE TABLE Test_Question (
     test_id INT NOT NULL,
     question_id INT NOT NULL,
-    custom_score DECIMAL(5,2) DEFAULT NULL COMMENT 'Điểm tùy chỉnh cho câu hỏi trong bài test này. NULL nghĩa là dùng max_score của Question',
+    custom_score DECIMAL(5,2) DEFAULT NULL COMMENT 'NULL = dùng max_score của Question',
     PRIMARY KEY (test_id, question_id),
     FOREIGN KEY (test_id) REFERENCES Test(test_id) ON DELETE CASCADE,
     FOREIGN KEY (question_id) REFERENCES Question(question_id) ON DELETE CASCADE
@@ -192,14 +190,16 @@ CREATE TABLE Test_Question (
 
 CREATE TABLE Choice (
     choice_id INT AUTO_INCREMENT PRIMARY KEY,
+    question_id INT NOT NULL,
     choice_content TEXT NOT NULL,
     is_true BOOLEAN DEFAULT FALSE,
-    question_id INT NOT NULL,
-    FOREIGN KEY (question_id) REFERENCES Question(question_id) ON DELETE CASCADE
+    FOREIGN KEY (question_id) REFERENCES Question(question_id) ON DELETE CASCADE,
+    -- Phục vụ cho ràng buộc khóa ngoại kép từ Student_answer
+    UNIQUE KEY uq_choice_question (question_id, choice_id)
 );
 
 -- ------------------------------------------------------------
--- 7. LẦN LÀM BÀI (ATTEMPT) - SCORE LÀ DẪN XUẤT
+-- 7. LẦN LÀM BÀI (ATTEMPT) - SCORE là cột bình thường, cập nhật qua TRIGGER
 -- ------------------------------------------------------------
 CREATE TABLE Attempt (
     attempt_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -209,33 +209,12 @@ CREATE TABLE Attempt (
     timer INT COMMENT 'Thời gian đã sử dụng (giây)',
     test_id INT NOT NULL,
     student_id INT NOT NULL,
-    -- Cột điểm được tính tự động dựa trên câu trả lời đúng và điểm của từng câu
-    score DECIMAL(7,2) GENERATED ALWAYS AS (
-        (SELECT COALESCE(SUM(
-            CASE
-                WHEN q.question_type IN ('multiple_choice', 'true_false') THEN
-                    COALESCE(tq.custom_score, q.max_score)
-                ELSE
-                    COALESCE(sa.score_awarded, 0)
-            END
-        ), 0)
-        FROM Student_answer sa
-        JOIN Question q ON sa.question_id = q.question_id
-        LEFT JOIN Test_Question tq ON tq.test_id = sa.attempt_id AND tq.question_id = sa.question_id
-        LEFT JOIN Choice c ON sa.choice_id = c.choice_id
-        WHERE sa.attempt_id = attempt_id
-          AND (
-              (q.question_type IN ('multiple_choice', 'true_false') AND c.is_true = 1)
-              OR
-              (q.question_type = 'essay' AND sa.score_awarded IS NOT NULL)
-          )
-        )
-    ) STORED COMMENT 'Điểm tổng được tính tự động từ câu trả lời đúng và điểm câu hỏi',
+    score DECIMAL(7,2) DEFAULT 0 COMMENT 'Điểm tổng, được tính và cập nhật tự động bởi trigger',
     FOREIGN KEY (test_id) REFERENCES Test(test_id) ON DELETE CASCADE,
     FOREIGN KEY (student_id) REFERENCES Student(id) ON DELETE CASCADE
 );
 
--- Bảng lưu câu trả lời của sinh viên
+-- Bảng lưu câu trả lời của sinh viên (đã thêm UNIQUE và khóa ngoại kép)
 CREATE TABLE Student_answer (
     ans_id INT AUTO_INCREMENT PRIMARY KEY,
     attempt_id INT NOT NULL,
@@ -245,7 +224,9 @@ CREATE TABLE Student_answer (
     score_awarded DECIMAL(5,2) DEFAULT NULL COMMENT 'Điểm giáo viên chấm cho câu tự luận',
     FOREIGN KEY (attempt_id) REFERENCES Attempt(attempt_id) ON DELETE CASCADE,
     FOREIGN KEY (question_id) REFERENCES Question(question_id) ON DELETE CASCADE,
-    FOREIGN KEY (choice_id) REFERENCES Choice(choice_id) ON DELETE CASCADE,
+    -- Khóa ngoại kép đảm bảo choice_id thuộc đúng question_id
+    FOREIGN KEY (question_id, choice_id) REFERENCES Choice(question_id, choice_id) ON DELETE CASCADE,
+    CONSTRAINT uq_student_answer UNIQUE (attempt_id, question_id),
     CONSTRAINT chk_answer CHECK (
         (choice_id IS NOT NULL AND answer_text IS NULL) OR
         (choice_id IS NULL AND answer_text IS NOT NULL)
@@ -278,36 +259,104 @@ CREATE TABLE Comment (
 );
 
 -- ------------------------------------------------------------
--- 9. TRIGGER NGHIỆP VỤ: KIỂM TRA THỜI GIAN LÀM BÀI
+-- 9. TRIGGER & HÀM HỖ TRỢ TÍNH ĐIỂM (THAY THẾ GENERATED COLUMN)
 -- ------------------------------------------------------------
 DELIMITER //
 
-CREATE TRIGGER trg_check_attempt_time
+-- Hàm tính điểm cho một attempt
+CREATE FUNCTION calculate_score(p_attempt_id INT) RETURNS DECIMAL(7,2)
+DETERMINISTIC
+READS SQL DATA
+BEGIN
+    DECLARE total DECIMAL(7,2);
+    SELECT COALESCE(SUM(
+        CASE
+            WHEN q.question_type IN ('multiple_choice', 'true_false') THEN
+                COALESCE(tq.custom_score, q.max_score)
+            ELSE
+                COALESCE(sa.score_awarded, 0)
+        END
+    ), 0) INTO total
+    FROM Student_answer sa
+    JOIN Question q ON sa.question_id = q.question_id
+    JOIN Attempt a ON sa.attempt_id = a.attempt_id
+    LEFT JOIN Test_Question tq ON tq.test_id = a.test_id AND tq.question_id = sa.question_id
+    LEFT JOIN Choice c ON sa.choice_id = c.choice_id
+    WHERE sa.attempt_id = p_attempt_id
+      AND (
+          (q.question_type IN ('multiple_choice', 'true_false') AND c.is_true = 1)
+          OR
+          (q.question_type = 'essay' AND sa.score_awarded IS NOT NULL)
+      );
+    RETURN total;
+END//
+
+-- Trigger cập nhật điểm sau khi thêm/sửa/xóa Student_answer
+CREATE TRIGGER trg_update_score_after_insert
+AFTER INSERT ON Student_answer
+FOR EACH ROW
+BEGIN
+    UPDATE Attempt SET score = calculate_score(NEW.attempt_id)
+    WHERE attempt_id = NEW.attempt_id;
+END//
+
+CREATE TRIGGER trg_update_score_after_update
+AFTER UPDATE ON Student_answer
+FOR EACH ROW
+BEGIN
+    UPDATE Attempt SET score = calculate_score(NEW.attempt_id)
+    WHERE attempt_id = NEW.attempt_id;
+END//
+
+CREATE TRIGGER trg_update_score_after_delete
+AFTER DELETE ON Student_answer
+FOR EACH ROW
+BEGIN
+    UPDATE Attempt SET score = calculate_score(OLD.attempt_id)
+    WHERE attempt_id = OLD.attempt_id;
+END//
+
+-- Trigger kiểm tra thời gian làm bài (đã thêm BEFORE UPDATE)
+CREATE TRIGGER trg_check_attempt_time_insert
 BEFORE INSERT ON Attempt
 FOR EACH ROW
 BEGIN
     DECLARE test_start_dt DATETIME;
     DECLARE test_end_dt DATETIME;
-
     SELECT test_start, test_end INTO test_start_dt, test_end_dt
-    FROM Test
-    WHERE test_id = NEW.test_id;
-
+    FROM Test WHERE test_id = NEW.test_id;
     IF NEW.start_time < test_start_dt OR NEW.start_time > test_end_dt THEN
         SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'Thời gian bắt đầu làm bài không nằm trong khoảng cho phép của bài kiểm tra.';
+        SET MESSAGE_TEXT = 'Thời gian bắt đầu làm bài không hợp lệ.';
     END IF;
-
     IF NEW.end_time IS NOT NULL AND NEW.end_time > test_end_dt THEN
         SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'Thời gian kết thúc làm bài vượt quá thời gian kết thúc của bài kiểm tra.';
+        SET MESSAGE_TEXT = 'Thời gian kết thúc vượt quá thời gian cho phép.';
+    END IF;
+END//
+
+CREATE TRIGGER trg_check_attempt_time_update
+BEFORE UPDATE ON Attempt
+FOR EACH ROW
+BEGIN
+    DECLARE test_start_dt DATETIME;
+    DECLARE test_end_dt DATETIME;
+    SELECT test_start, test_end INTO test_start_dt, test_end_dt
+    FROM Test WHERE test_id = NEW.test_id;
+    IF NEW.start_time < test_start_dt OR NEW.start_time > test_end_dt THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Thời gian bắt đầu làm bài không hợp lệ.';
+    END IF;
+    IF NEW.end_time IS NOT NULL AND NEW.end_time > test_end_dt THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Thời gian kết thúc vượt quá thời gian cho phép.';
     END IF;
 END//
 
 DELIMITER ;
 
 -- ------------------------------------------------------------
--- 10. DỮ LIỆU MẪU (MỖI BẢNG ÍT NHẤT 5 DÒNG)
+-- 10. DỮ LIỆU MẪU (Đã điều chỉnh cho phù hợp với schema mới)
 -- ------------------------------------------------------------
 -- Role
 INSERT INTO Role (role_name) VALUES ('Student'), ('Lecturer'), ('Admin'), ('Teaching Assistant'), ('Guest');
@@ -350,16 +399,16 @@ INSERT INTO User (firstName, middleName, lastName, sex, email, birthday, nationa
 ('Ngo', 'Thanh', 'Nga', 'Female', 'nga.ngo@hcmut.edu.vn', '1992-06-25', 'Vietnam'),
 ('Trinh', 'Van', 'Phong', 'Male', 'phong.trinh@hcmut.edu.vn', '1980-10-10', 'Vietnam');
 
--- Student (id 1-5)
+-- Student
 INSERT INTO Student (id, s_mssv) VALUES (1, 'SV001'), (2, 'SV002'), (3, 'SV003'), (4, 'SV004'), (5, 'SV005');
 
--- Lecturer (id 6-8)
+-- Lecturer
 INSERT INTO Lecturer (id, l_msgv) VALUES (6, 'GV001'), (7, 'GV002'), (8, 'GV003');
 
--- Admin (id 9-10)
+-- Admin
 INSERT INTO Admin (id, a_msqt) VALUES (9, 'AD001'), (10, 'AD002');
 
--- User_acc
+-- User_acc (mật khẩu để plaintext cho mục đích demo - không dùng trong production)
 INSERT INTO User_acc (ua_id, ua_username, ua_password, ua_image, role_id) VALUES
 (1, 'an.nguyen', 'pass123', NULL, 1),
 (2, 'binh.tran', 'pass123', NULL, 1),
@@ -392,7 +441,7 @@ INSERT INTO Chapter (class_id, chapter_id, chapter_name) VALUES
 (4,1,'Laws of Thermodynamics'), (4,2,'Entropy'),
 (5,1,'Forces'), (5,2,'Beam Deflection');
 
--- Topic (mỗi chương 2 topic)
+-- Topic
 INSERT INTO Topic (class_id, chapter_id, topic_id, topic_name, topic_content) VALUES
 (1,1,1,'DBMS Overview','...'), (1,1,2,'Data Models','...'),
 (1,2,1,'Keys','...'), (1,2,2,'Normalization','...'),
@@ -405,7 +454,7 @@ INSERT INTO Topic (class_id, chapter_id, topic_id, topic_name, topic_content) VA
 (5,1,1,'Equilibrium','...'), (5,1,2,'Stress & Strain','...'),
 (5,2,1,'Elastic Curve','...'), (5,2,2,'Superposition','...');
 
--- File (5 file)
+-- File
 INSERT INTO File (class_id, chapter_id, topic_id, file_id, file_name, file_path) VALUES
 (1,1,1,1,'lecture1.pdf','/files/lecture1.pdf'),
 (1,1,2,1,'slides.pptx','/files/slides.pptx'),
@@ -413,7 +462,7 @@ INSERT INTO File (class_id, chapter_id, topic_id, file_id, file_name, file_path)
 (3,2,2,1,'kcl_simulation.mp4','/files/kcl_simulation.mp4'),
 (4,1,2,1,'thermo_lab.pdf','/files/thermo_lab.pdf');
 
--- Test (5 bài)
+-- Test
 INSERT INTO Test (test_name, test_start, test_end, test_timer, class_id, chapter_id) VALUES
 ('Midterm DB', '2025-03-15 09:00:00', '2025-03-15 10:30:00', 90, 1, 1),
 ('Quiz 1 DS', '2025-03-20 10:00:00', '2025-03-20 10:30:00', 30, 2, 1),
@@ -425,26 +474,28 @@ INSERT INTO Test (test_name, test_start, test_end, test_timer, class_id, chapter
 INSERT INTO Quiz (test_id, quizz_id) VALUES (1, 'QZ001'), (2, 'QZ002');
 INSERT INTO File_submission (test_id, fs_id, path) VALUES (4, 'FS001', '/submissions/'), (5, 'FS002', '/submissions/');
 
--- Question (có max_score)
-INSERT INTO Question (question_type, question_content, max_score, test_id) VALUES
-('multiple_choice', 'What is a primary key?', 1.5, 1),
-('true_false', 'A foreign key can be NULL.', 1.0, 1),
-('multiple_choice', 'Which is not a linear data structure?', 2.0, 2),
-('essay', 'Explain KVL with example.', 5.0, 3),
-('multiple_choice', 'First law of thermodynamics is about?', 1.0, 4);
+-- Question (không còn test_id)
+INSERT INTO Question (question_type, question_content, max_score) VALUES
+('multiple_choice', 'What is a primary key?', 1.5),
+('true_false', 'A foreign key can be NULL.', 1.0),
+('multiple_choice', 'Which is not a linear data structure?', 2.0),
+('essay', 'Explain KVL with example.', 5.0),
+('multiple_choice', 'First law of thermodynamics is about?', 1.0);
 
--- Choice (câu trắc nghiệm)
-INSERT INTO Choice (choice_content, is_true, question_id) VALUES
-('Unique identifier', 1, 1), ('Can be duplicate', 0, 1), ('Always integer', 0, 1),
-('True', 1, 2), ('False', 0, 2),
-('Array', 0, 3), ('Stack', 0, 3), ('Tree', 1, 3),
-('Conservation of energy', 1, 5), ('Conservation of mass', 0, 5);
+-- Choice
+INSERT INTO Choice (question_id, choice_content, is_true) VALUES
+(1, 'Unique identifier', 1), (1, 'Can be duplicate', 0), (1, 'Always integer', 0),
+(2, 'True', 1), (2, 'False', 0),
+(3, 'Array', 0), (3, 'Stack', 0), (3, 'Tree', 1),
+(5, 'Conservation of energy', 1), (5, 'Conservation of mass', 0);
 
--- Test_Question (tuỳ chỉnh điểm nếu muốn, để NULL thì dùng max_score của Question)
+-- Test_Question (liên kết câu hỏi vào bài test)
 INSERT INTO Test_Question (test_id, question_id, custom_score) VALUES
-(1, 1, NULL),  -- dùng 1.5
-(1, 2, NULL),  -- dùng 1.0
-(2, 3, 2.5);   -- ghi đè thành 2.5
+(1, 1, NULL),  -- dùng max_score 1.5
+(1, 2, NULL),  -- dùng max_score 1.0
+(2, 3, 2.5),   -- ghi đè 2.5
+(3, 4, NULL),  -- câu tự luận, dùng max_score 5.0
+(4, 5, NULL);  -- dùng max_score 1.0
 
 -- Attempt
 INSERT INTO Attempt (attempt_index, start_time, end_time, timer, test_id, student_id) VALUES
@@ -454,16 +505,16 @@ INSERT INTO Attempt (attempt_index, start_time, end_time, timer, test_id, studen
 (2, '2025-03-16 14:00:00', '2025-03-16 15:30:00', 5400, 1, 1),
 (1, '2025-03-26 08:05:00', '2025-03-26 08:40:00', 2100, 5, 4);
 
--- Student_answer (có chấm điểm cho câu tự luận)
+-- Student_answer (sẽ kích hoạt trigger tính điểm)
 INSERT INTO Student_answer (attempt_id, question_id, choice_id, answer_text, score_awarded) VALUES
-(1, 1, 1, NULL, NULL),          -- đúng -> 1.5
-(1, 2, 4, NULL, NULL),          -- đúng -> 1.0
-(2, 3, 8, NULL, NULL),          -- đúng -> 2.5 (do custom_score)
-(3, 1, 1, NULL, NULL),          -- đúng
-(3, 2, 4, NULL, NULL),          -- đúng
-(4, 1, 2, NULL, NULL),          -- sai -> 0
-(4, 2, 5, NULL, NULL),          -- sai -> 0
-(5, 5, 9, NULL, NULL);          -- đúng -> 1.0
+(1, 1, 1, NULL, NULL),
+(1, 2, 4, NULL, NULL),
+(2, 3, 8, NULL, NULL),
+(3, 1, 1, NULL, NULL),
+(3, 2, 4, NULL, NULL),
+(4, 1, 2, NULL, NULL),
+(4, 2, 5, NULL, NULL),
+(5, 5, 9, NULL, NULL);
 
 -- Post & Comment
 INSERT INTO Post (post_name, post_description, post_start, ua_id, class_id) VALUES
