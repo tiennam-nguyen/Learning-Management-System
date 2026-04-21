@@ -184,6 +184,7 @@ CREATE TABLE Test_Question (
     question_id INT NOT NULL,
     custom_score DECIMAL(5,2) DEFAULT NULL COMMENT 'NULL = dùng max_score của Question',
     PRIMARY KEY (test_id, question_id),
+    CHECK (custom_score IS NULL OR custom_score > 0),
     FOREIGN KEY (test_id) REFERENCES Test(test_id) ON DELETE CASCADE,
     FOREIGN KEY (question_id) REFERENCES Question(question_id) ON DELETE CASCADE
 );
