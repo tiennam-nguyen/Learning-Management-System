@@ -198,7 +198,7 @@ CREATE TABLE Choice (
     choice_content TEXT NOT NULL,
     is_true BOOLEAN DEFAULT FALSE,
     FOREIGN KEY (question_id) REFERENCES Question(question_id) ON DELETE CASCADE,
-    INDEX idx_choice_question (question_id, choice_id)
+    UNIQUE INDEX idx_choice_question (question_id, choice_id)
 );
 
 -- ------------------------------------------------------------
@@ -711,15 +711,15 @@ INSERT INTO Choice (question_id, choice_content, is_true) VALUES
 
 -- Test_Question
 INSERT INTO Test_Question (test_id, question_id, custom_score) VALUES
-(1, 1, NULL), (1, 2, NULL), (2, 3, 2.5), (3, 4, NULL), (4, 5, NULL);
+(1, 1, NULL), (1, 2, NULL), (2, 3, 2.5), (3, 4, NULL), (5, 5, NULL);
 
 -- Attempt (đã sửa thời gian)
 INSERT INTO Attempt (attempt_index, start_time, end_time, timer, test_id, student_id) VALUES
 (1, '2025-03-15 09:05:00', '2025-03-15 10:20:00', 4500, 1, 1),
 (1, '2025-03-20 10:02:00', '2025-03-20 10:28:00', 1560, 2, 3),
-(1, '2025-03-15 09:10:00', '2025-03-15 10:25:00', 4500, 1, 3),
-(2, '2025-03-15 14:00:00', '2025-03-15 15:30:00', 5400, 1, 1),
-(1, '2025-03-26 08:05:00', '2025-03-26 08:40:00', 2100, 5, 4);
+(1, '2025-03-15 09:10:00', '2025-03-15 10:25:00', 4500, 1, 2),
+(2, '2025-03-15 09:15:00', '2025-03-15 10:30:00', 4500, 1, 1),
+(1, '2025-03-25 08:05:00', '2025-03-25 08:40:00', 2100, 5, 4);
 
 -- Student_answer
 INSERT INTO Student_answer (attempt_id, question_id, choice_id, answer_text, score_awarded) VALUES
