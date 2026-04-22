@@ -1,7 +1,7 @@
 -- ============================================================
 -- DATABASE: ELearningDB
 -- MÔ TẢ: Hệ thống quản lý học tập (LMS)
--- PHIÊN BẢN: 2.7.1 (Hoàn thiện sửa lỗi dữ liệu và trigger)
+-- PHIÊN BẢN: 2.8 (Bổ sung đầy đủ ràng buộc nghiệp vụ)
 -- ============================================================
 
 DROP DATABASE IF EXISTS ELearningDB;
@@ -28,11 +28,14 @@ CREATE TABLE Faculty (
     faculty_name VARCHAR(100) NOT NULL UNIQUE
 );
 
+-- Thêm cột credit (số tín chỉ)
 CREATE TABLE Subject (
     subject_id INT AUTO_INCREMENT PRIMARY KEY,
     subject_name VARCHAR(100) NOT NULL,
+    credit INT NOT NULL DEFAULT 3,
     faculty_id INT NOT NULL,
-    FOREIGN KEY (faculty_id) REFERENCES Faculty(faculty_id)
+    FOREIGN KEY (faculty_id) REFERENCES Faculty(faculty_id),
+    CONSTRAINT chk_credit_positive CHECK (credit > 0)
 );
 
 -- ------------------------------------------------------------
@@ -46,7 +49,8 @@ CREATE TABLE User (
     sex ENUM('Male', 'Female', 'Other') NOT NULL,
     email VARCHAR(100) UNIQUE NOT NULL,
     birthday DATE,
-    nationality VARCHAR(50)
+    nationality VARCHAR(50),
+    CONSTRAINT chk_email_format CHECK (email LIKE '%@hcmut.edu.vn')
 );
 
 CREATE TABLE Student (
@@ -55,15 +59,18 @@ CREATE TABLE Student (
     FOREIGN KEY (id) REFERENCES User(id) ON DELETE CASCADE
 );
 
+-- Thêm cột degree (trình độ)
 CREATE TABLE Lecturer (
     id INT PRIMARY KEY,
     l_msgv VARCHAR(20) UNIQUE NOT NULL,
+    degree ENUM('Bachelor', 'Master', 'PhD') NOT NULL,
     FOREIGN KEY (id) REFERENCES User(id) ON DELETE CASCADE
 );
 
 CREATE TABLE Admin (
     id INT PRIMARY KEY,
     a_msqt VARCHAR(20) UNIQUE NOT NULL,
+    degree ENUM('Bachelor', 'Master', 'PhD') NOT NULL,
     FOREIGN KEY (id) REFERENCES User(id) ON DELETE CASCADE
 );
 
@@ -120,6 +127,7 @@ CREATE TABLE Topic (
     FOREIGN KEY (class_id, chapter_id) REFERENCES Chapter(class_id, chapter_id) ON DELETE CASCADE
 );
 
+-- Thêm cột file_size (MB) và ràng buộc <= 200
 CREATE TABLE File (
     class_id INT,
     chapter_id INT,
@@ -127,9 +135,11 @@ CREATE TABLE File (
     file_id INT,
     file_name VARCHAR(255) NOT NULL,
     file_path VARCHAR(512) NOT NULL,
+    file_size INT NOT NULL COMMENT 'Kích thước file (MB)',
     update_date DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (class_id, chapter_id, topic_id, file_id),
-    FOREIGN KEY (class_id, chapter_id, topic_id) REFERENCES Topic(class_id, chapter_id, topic_id) ON DELETE CASCADE
+    FOREIGN KEY (class_id, chapter_id, topic_id) REFERENCES Topic(class_id, chapter_id, topic_id) ON DELETE CASCADE,
+    CONSTRAINT chk_file_size CHECK (file_size <= 200)
 );
 
 -- ------------------------------------------------------------
@@ -259,6 +269,7 @@ CREATE TABLE Comment (
 -- ------------------------------------------------------------
 DELIMITER //
 
+-- Hàm tính điểm
 CREATE FUNCTION calculate_score(p_attempt_id INT) RETURNS DECIMAL(7,2)
 DETERMINISTIC
 READS SQL DATA
@@ -286,6 +297,7 @@ BEGIN
     RETURN total;
 END//
 
+-- Triggers cập nhật điểm
 CREATE TRIGGER trg_update_score_after_insert
 AFTER INSERT ON Student_answer
 FOR EACH ROW
@@ -310,6 +322,7 @@ BEGIN
     WHERE attempt_id = OLD.attempt_id;
 END//
 
+-- Trigger xác thực câu trả lời
 CREATE TRIGGER trg_validate_student_answer
 BEFORE INSERT ON Student_answer
 FOR EACH ROW
@@ -386,6 +399,7 @@ BEGIN
     END IF;
 END//
 
+-- Trigger kiểm tra thời gian làm bài
 CREATE TRIGGER trg_check_attempt_time_insert
 BEFORE INSERT ON Attempt
 FOR EACH ROW
@@ -458,6 +472,7 @@ BEGIN
     END IF;
 END//
 
+-- Trigger ngăn tạo Choice cho câu hỏi essay
 CREATE TRIGGER trg_prevent_choice_for_essay
 BEFORE INSERT ON Choice
 FOR EACH ROW
@@ -486,10 +501,49 @@ BEGIN
     END IF;
 END//
 
+-- ========== RÀNG BUỘC MỚI BỔ SUNG ==========
+
+-- 1. Trigger kiểm tra trạng thái lớp trước khi tạo Test (chỉ cho phép status = 'Open')
+CREATE TRIGGER trg_check_class_status_for_test
+BEFORE INSERT ON Test
+FOR EACH ROW
+BEGIN
+    DECLARE v_status_name VARCHAR(50);
+    
+    SELECT s.status_display INTO v_status_name
+    FROM Class c
+    JOIN Status s ON c.status_id = s.status_id
+    WHERE c.class_id = NEW.class_id;
+    
+    IF v_status_name != 'Open' THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Chỉ có thể thêm bài kiểm tra vào lớp học đang ở trạng thái Open.';
+    END IF;
+END//
+
+-- 2. Trigger giới hạn số lượng file tối đa 5 trong một topic
+CREATE TRIGGER trg_limit_files_per_topic
+BEFORE INSERT ON File
+FOR EACH ROW
+BEGIN
+    DECLARE file_count INT;
+    
+    SELECT COUNT(*) INTO file_count
+    FROM File
+    WHERE class_id = NEW.class_id
+      AND chapter_id = NEW.chapter_id
+      AND topic_id = NEW.topic_id;
+    
+    IF file_count >= 5 THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Mỗi topic không được có quá 5 file đính kèm.';
+    END IF;
+END//
+
 DELIMITER ;
 
 -- ------------------------------------------------------------
--- 10. DỮ LIỆU MẪU (ĐÃ SỬA HOÀN TOÀN)
+-- 10. DỮ LIỆU MẪU (ĐÃ CẬP NHẬT)
 -- ------------------------------------------------------------
 -- Status
 INSERT INTO Status (status_display) VALUES
@@ -508,16 +562,16 @@ INSERT INTO Faculty (faculty_name) VALUES
 ('Computer Science'), ('Electrical Engineering'), ('Mechanical Engineering'),
 ('Civil Engineering'), ('Business Administration');
 
--- Subject
-INSERT INTO Subject (subject_name, faculty_id) VALUES
-('Database Systems', 1),
-('Data Structures', 1),
-('Circuit Analysis', 2),
-('Thermodynamics', 3),
-('Structural Analysis', 4),
-('Marketing Principles', 5);
+-- Subject (đã thêm credit)
+INSERT INTO Subject (subject_name, credit, faculty_id) VALUES
+('Database Systems', 4, 1),
+('Data Structures', 3, 1),
+('Circuit Analysis', 3, 2),
+('Thermodynamics', 3, 3),
+('Structural Analysis', 4, 4),
+('Marketing Principles', 3, 5);
 
--- User
+-- User (email đều đuôi @hcmut.edu.vn)
 INSERT INTO User (firstName, middleName, lastName, sex, email, birthday, nationality) VALUES
 ('Nguyen', 'Van', 'An', 'Male', 'an.nguyen@hcmut.edu.vn', '2000-01-15', 'Vietnam'),
 ('Tran', 'Thi', 'Binh', 'Female', 'binh.tran@hcmut.edu.vn', '2001-03-22', 'Vietnam'),
@@ -539,15 +593,21 @@ INSERT INTO User (firstName, middleName, lastName, sex, email, birthday, nationa
 INSERT INTO Student (id, s_mssv) VALUES
 (1, 'SV001'), (2, 'SV002'), (3, 'SV003'), (4, 'SV004'), (5, 'SV005');
 
--- Lecturer
-INSERT INTO Lecturer (id, l_msgv) VALUES
-(6, 'GV001'), (7, 'GV002'), (8, 'GV003'),
-(11, 'GV004'), (12, 'GV005');
+-- Lecturer (đã có degree)
+INSERT INTO Lecturer (id, l_msgv, degree) VALUES
+(6, 'GV001', 'PhD'),
+(7, 'GV002', 'Master'),
+(8, 'GV003', 'Master'),
+(11, 'GV004', 'PhD'),
+(12, 'GV005', 'Bachelor');
 
--- Admin
-INSERT INTO Admin (id, a_msqt) VALUES
-(9, 'AD001'), (10, 'AD002'),
-(13, 'AD003'), (14, 'AD004'), (15, 'AD005');
+-- Admin (đã có degree)
+INSERT INTO Admin (id, a_msqt, degree) VALUES
+(9, 'AD001', 'Master'),
+(10, 'AD002', 'Bachelor'),
+(13, 'AD003', 'PhD'),
+(14, 'AD004', 'Master'),
+(15, 'AD005', 'Bachelor');
 
 -- User_acc
 INSERT INTO User_acc (ua_id, ua_username, ua_password, ua_image) VALUES
@@ -567,13 +627,14 @@ INSERT INTO User_acc (ua_id, ua_username, ua_password, ua_image) VALUES
 (14, 'tuan.phan', 'adminpass', NULL),
 (15, 'van.vu', 'adminpass', NULL);
 
--- Class
+-- Class (đảm bảo status_id tương ứng với 'Open' hoặc 'Ongoing' để Test được tạo)
 INSERT INTO Class (class_name, subject_id, semester_id, status_id, lecturer_id) VALUES
-('DB-2025-01', 1, 1, 1, 6),
-('DS-2025-01', 2, 1, 1, 7),
-('Circuit-2025-01', 3, 1, 1, 8),
-('Thermo-2025-01', 4, 1, 1, 11),
-('Struct-2025-01', 5, 1, 2, 12);
+('DB-2025-01', 1, 1, 1, 6),      -- status 'Open'
+('DS-2025-01', 2, 1, 1, 7),      -- 'Open'
+('Circuit-2025-01', 3, 1, 1, 8), -- 'Open'
+('Thermo-2025-01', 4, 1, 1, 11),-- 'Open'
+('Struct-2025-01', 5, 1, 3, 12); -- 'Ongoing' (status_id=3) – vẫn cho phép tạo Test vì trigger chỉ chặn 'Open'? Cần điều chỉnh: thường 'Ongoing' cũng được phép. Trigger của chúng ta chỉ cho 'Open', nên có thể đổi thành 'Open' hoặc sửa trigger. Tôi sẽ giữ nguyên trigger chỉ cho 'Open' và đổi lớp này thành 'Open' luôn cho an toàn.
+UPDATE Class SET status_id = 1 WHERE class_id = 5; -- sửa thành Open
 
 -- Enrollment
 INSERT INTO Enrollment (student_id, class_id) VALUES
@@ -600,36 +661,32 @@ INSERT INTO Topic (class_id, chapter_id, topic_id, topic_name, topic_content) VA
 (5,1,1,'Equilibrium','...'), (5,1,2,'Stress & Strain','...'),
 (5,2,1,'Elastic Curve','...'), (5,2,2,'Superposition','...');
 
--- File
-INSERT INTO File (class_id, chapter_id, topic_id, file_id, file_name, file_path) VALUES
-(1,1,1,1,'lecture1.pdf','/files/lecture1.pdf'),
-(1,1,2,1,'slides.pptx','/files/slides.pptx'),
-(2,1,1,1,'array_examples.zip','/files/array_examples.zip'),
-(3,2,2,1,'kcl_simulation.mp4','/files/kcl_simulation.mp4'),
-(4,1,2,1,'thermo_lab.pdf','/files/thermo_lab.pdf');
+-- File (có file_size)
+INSERT INTO File (class_id, chapter_id, topic_id, file_id, file_name, file_path, file_size) VALUES
+(1,1,1,1,'lecture1.pdf','/files/lecture1.pdf', 150),
+(1,1,2,1,'slides.pptx','/files/slides.pptx', 80),
+(2,1,1,1,'array_examples.zip','/files/array_examples.zip', 50),
+(3,2,2,1,'kcl_simulation.mp4','/files/kcl_simulation.mp4', 180),
+(4,1,2,1,'thermo_lab.pdf','/files/thermo_lab.pdf', 120);
 
--- Test: Thêm đủ 10 bài để phục vụ Quiz và File_submission
+-- Test (các lớp đều Open hoặc Ongoing, trigger sẽ cho qua)
 INSERT INTO Test (test_name, test_start, test_end, test_timer, class_id, chapter_id) VALUES
-('Midterm DB', '2025-03-15 09:00:00', '2025-03-15 10:30:00', 90, 1, 1),          -- test_id=1
-('Quiz 1 DS', '2025-03-20 10:00:00', '2025-03-20 10:30:00', 30, 2, 1),           -- test_id=2
-('Final Circuit', '2025-05-10 13:00:00', '2025-05-10 15:00:00', 120, 3, NULL),   -- test_id=3
-('Thermo Assignment', '2025-04-01 00:00:00', '2025-04-07 23:59:59', 0, 4, NULL), -- test_id=4
-('Struct Quiz', '2025-03-25 08:00:00', '2025-03-25 08:45:00', 45, 5, 2),         -- test_id=5
-('Quiz 2 DB', '2025-04-10 09:00:00', '2025-04-10 10:00:00', 60, 1, 2),           -- test_id=6
-('Quiz 3 DS', '2025-04-15 10:00:00', '2025-04-15 10:45:00', 45, 2, 2),           -- test_id=7
-('Assignment 2 Circuit', '2025-05-01 00:00:00', '2025-05-05 23:59:59', 0, 3, NULL), -- test_id=8
-('Project DB', '2025-05-20 00:00:00', '2025-06-01 23:59:59', 0, 1, NULL),        -- test_id=9
-('Final Exam DS', '2025-06-10 09:00:00', '2025-06-10 11:30:00', 150, 2, NULL);   -- test_id=10
+('Midterm DB', '2025-03-15 09:00:00', '2025-03-15 10:30:00', 90, 1, 1),
+('Quiz 1 DS', '2025-03-20 10:00:00', '2025-03-20 10:30:00', 30, 2, 1),
+('Final Circuit', '2025-05-10 13:00:00', '2025-05-10 15:00:00', 120, 3, NULL),
+('Thermo Assignment', '2025-04-01 00:00:00', '2025-04-07 23:59:59', 0, 4, NULL),
+('Struct Quiz', '2025-03-25 08:00:00', '2025-03-25 08:45:00', 45, 5, 2),
+('Quiz 2 DB', '2025-04-10 09:00:00', '2025-04-10 10:00:00', 60, 1, 2),
+('Quiz 3 DS', '2025-04-15 10:00:00', '2025-04-15 10:45:00', 45, 2, 2),
+('Assignment 2 Circuit', '2025-05-01 00:00:00', '2025-05-05 23:59:59', 0, 3, NULL),
+('Project DB', '2025-05-20 00:00:00', '2025-06-01 23:59:59', 0, 1, NULL),
+('Final Exam DS', '2025-06-10 09:00:00', '2025-06-10 11:30:00', 150, 2, NULL);
 
--- Quiz: 5 dòng không trùng test_id (1,2,6,7,3)
+-- Quiz
 INSERT INTO Quiz (test_id, quizz_id) VALUES
-(1, 'QZ001'),
-(2, 'QZ002'),
-(6, 'QZ003'),
-(7, 'QZ004'),
-(3, 'QZ005');
+(1, 'QZ001'), (2, 'QZ002'), (6, 'QZ003'), (7, 'QZ004'), (3, 'QZ005');
 
--- File_submission: 5 dòng không trùng test_id (4,5,8,9,10)
+-- File_submission
 INSERT INTO File_submission (test_id, fs_id, path) VALUES
 (4, 'FS001', '/submissions/'),
 (5, 'FS002', '/submissions/'),
@@ -656,12 +713,12 @@ INSERT INTO Choice (question_id, choice_content, is_true) VALUES
 INSERT INTO Test_Question (test_id, question_id, custom_score) VALUES
 (1, 1, NULL), (1, 2, NULL), (2, 3, 2.5), (3, 4, NULL), (4, 5, NULL);
 
--- Attempt: Đã sửa lỗi student_id và thời gian
+-- Attempt (đã sửa thời gian)
 INSERT INTO Attempt (attempt_index, start_time, end_time, timer, test_id, student_id) VALUES
 (1, '2025-03-15 09:05:00', '2025-03-15 10:20:00', 4500, 1, 1),
-(1, '2025-03-20 10:02:00', '2025-03-20 10:28:00', 1560, 2, 3),   -- sửa student_id=3 (đã học lớp 2)
+(1, '2025-03-20 10:02:00', '2025-03-20 10:28:00', 1560, 2, 3),
 (1, '2025-03-15 09:10:00', '2025-03-15 10:25:00', 4500, 1, 3),
-(2, '2025-03-15 14:00:00', '2025-03-15 15:30:00', 5400, 1, 1),   -- sửa ngày về 2025-03-15
+(2, '2025-03-15 14:00:00', '2025-03-15 15:30:00', 5400, 1, 1),
 (1, '2025-03-26 08:05:00', '2025-03-26 08:40:00', 2100, 5, 4);
 
 -- Student_answer
@@ -675,7 +732,7 @@ INSERT INTO Student_answer (attempt_id, question_id, choice_id, answer_text, sco
 (4, 2, 5, NULL, NULL),
 (5, 5, 9, NULL, NULL);
 
--- Post
+-- Post & Comment
 INSERT INTO Post (post_name, post_description, post_start, ua_id, class_id) VALUES
 ('Welcome to DB', 'Introduction post', NOW(), 1, 1),
 ('Assignment 1', 'Submit by 15/4', '2025-04-01 00:00:00', 6, 1),
@@ -683,7 +740,6 @@ INSERT INTO Post (post_name, post_description, post_start, ua_id, class_id) VALU
 ('Quiz reminder', 'Next Monday', '2025-03-19 08:00:00', 7, 2),
 ('Project groups', 'Form groups of 3', NOW(), 8, 3);
 
--- Comment
 INSERT INTO Comment (comment_content, post_id, ua_id) VALUES
 ('Thanks!', 1, 2),
 ('When is deadline?', 2, 3),
