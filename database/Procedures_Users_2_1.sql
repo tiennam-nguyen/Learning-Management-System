@@ -1,3 +1,4 @@
+
 DELIMITER //
 
 -- =====================================================================================
@@ -22,19 +23,20 @@ CREATE PROCEDURE sp_CreateUser(
     IN p_birthday DATE,
     IN p_nationality VARCHAR(50),
     IN p_user_code VARCHAR(20), 
+    IN p_degree VARCHAR(20), 
     OUT p_new_user_id INT
 )
 BEGIN
     DECLARE v_error_msg VARCHAR(512);
 
-    -- [EXCEPTION HANDLER]: Bắt riêng lỗi 1062 (Trùng lặp dữ liệu UNIQUE)
-    -- Lỗi này sẽ nổ ra nếu Email hoặc Mã định danh (MSSV/MSGV) đã tồn tại
+    -- [EXCEPTION HANDLER]: Trùng lặp dữ liệu UNIQUE
     DECLARE EXIT HANDLER FOR 1062
     BEGIN
         ROLLBACK;
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Lỗi: Email hoặc Mã số định danh đã tồn tại trong hệ thống!';
     END;
-    -- [EXCEPTION HANDLER]: Rollback giao dịch và ném lỗi nếu có exception
+
+    -- [EXCEPTION HANDLER]: Rollback lỗi hệ thống
     DECLARE EXIT HANDLER FOR SQLEXCEPTION
     BEGIN
         GET DIAGNOSTICS CONDITION 1 v_error_msg = MESSAGE_TEXT;
@@ -42,42 +44,39 @@ BEGIN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_error_msg;
     END;
 
-    -- [VALIDATION]: Xác minh vai trò người dùng thuộc danh sách cho phép
+    -- [VALIDATION]: Role hợp lệ
     IF p_role_name NOT IN ('Student', 'Lecturer', 'Admin') THEN
-        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Lỗi: Vai trò người dùng không hợp lệ (Phải là Student, Lecturer hoặc Admin)!';
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Lỗi: Vai trò người dùng không hợp lệ!';
     END IF;
 
-    -- [VALIDATION]: Đảm bảo các thông tin định danh không bị rỗng
+    -- [VALIDATION]: Kiểm tra rỗng
     IF TRIM(p_email) = '' OR TRIM(p_user_code) = '' THEN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Lỗi: Email và Mã số định danh không được để trống!';
     END IF;
 
     START TRANSACTION;
 
-    -- [BƯỚC 1]: Lưu trữ thông tin cá nhân cơ bản vào bảng `User`
+    -- [BƯỚC 1]: Lưu bảng User
     INSERT INTO User (firstName, middleName, lastName, sex, email, birthday, nationality)
     VALUES (TRIM(p_firstName), TRIM(p_middleName), TRIM(p_lastName), p_sex, TRIM(p_email), p_birthday, TRIM(p_nationality));
     
     SET p_new_user_id = LAST_INSERT_ID();
 
-    -- [BƯỚC 2]: Phân bổ người dùng vào bảng chuyên biệt dựa theo Role
+    -- [BƯỚC 2]: Phân bổ vào bảng con (ĐÃ SỬA THÊM DEGREE)
     IF p_role_name = 'Student' THEN
         INSERT INTO Student (id, s_mssv) VALUES (p_new_user_id, TRIM(p_user_code));
     ELSEIF p_role_name = 'Lecturer' THEN
-        INSERT INTO Lecturer (id, l_msgv) VALUES (p_new_user_id, TRIM(p_user_code));
+        INSERT INTO Lecturer (id, l_msgv, degree) VALUES (p_new_user_id, TRIM(p_user_code), p_degree);
     ELSEIF p_role_name = 'Admin' THEN
-        INSERT INTO Admin (id, a_msqt) VALUES (p_new_user_id, TRIM(p_user_code));
+        INSERT INTO Admin (id, a_msqt, degree) VALUES (p_new_user_id, TRIM(p_user_code), p_degree);
     END IF;
 
-    -- [BƯỚC 3]: Thiết lập thông tin đăng nhập ban đầu vào bảng `User_acc`
-    -- Lưu ý: Mật khẩu được băm bằng thuật toán SHA256
+    -- [BƯỚC 3]: Tạo tài khoản
     INSERT INTO User_acc (ua_id, ua_username, ua_password)
     VALUES (p_new_user_id, TRIM(p_user_code), SHA2(TRIM(p_user_code), 256));
 
     COMMIT;
 END//
-
-
 -- =====================================================================================
 -- PROCEDURE: sp_UpdateUserInfo
 -- MÔ TẢ:     Cập nhật thông tin cá nhân của một người dùng đã tồn tại.
