@@ -27,6 +27,13 @@ CREATE PROCEDURE sp_CreateUser(
 BEGIN
     DECLARE v_error_msg VARCHAR(512);
 
+    -- [EXCEPTION HANDLER]: Bắt riêng lỗi 1062 (Trùng lặp dữ liệu UNIQUE)
+    -- Lỗi này sẽ nổ ra nếu Email hoặc Mã định danh (MSSV/MSGV) đã tồn tại
+    DECLARE EXIT HANDLER FOR 1062
+    BEGIN
+        ROLLBACK;
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Lỗi: Email hoặc Mã số định danh đã tồn tại trong hệ thống!';
+    END;
     -- [EXCEPTION HANDLER]: Rollback giao dịch và ném lỗi nếu có exception
     DECLARE EXIT HANDLER FOR SQLEXCEPTION
     BEGIN
