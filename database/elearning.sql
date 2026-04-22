@@ -1,12 +1,12 @@
 -- ============================================================
--- DATABASE: ELearningDB
+-- DATABASE: elearning
 -- MÔ TẢ: Hệ thống quản lý học tập (LMS)
 -- PHIÊN BẢN: 2.8 (Bổ sung đầy đủ ràng buộc nghiệp vụ)
 -- ============================================================
 
-DROP DATABASE IF EXISTS ELearningDB;
-CREATE DATABASE ELearningDB;
-USE ELearningDB;
+DROP DATABASE IF EXISTS elearning;
+CREATE DATABASE elearning;
+USE elearning;
 
 -- ------------------------------------------------------------
 -- 1. DANH MỤC CƠ SỞ
