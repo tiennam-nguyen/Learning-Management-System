@@ -1,0 +1,62 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ post.post_name }} - Discussion{% endblock %}
+
+{% block content %}
+<div class="row align-items-center mb-4 mt-2">
+  <div class="col-md-8">
+    <h2 class="text-primary fw-bold mb-1">{{ post.post_name }}</h2>
+    <p class="text-muted mb-0">
+      {{ class_name }}
+      · by <span class="fw-semibold">{{ post.author_name }}</span>
+      {% if post.post_start %}· {{ post.post_start }}{% endif %}
+    </p>
+  </div>
+  <div class="col-md-4 text-md-end mt-3 mt-md-0">
+    <a href="{{ url_for('discussion_list', class_id=class_id) }}" class="btn btn-outline-secondary rounded-pill px-4 fw-semibold">
+      Back to Discussion
+    </a>
+  </div>
+</div>
+
+<div class="card shadow-sm border-0 rounded-3 mb-4">
+  <div class="card-body p-4">
+    <div class="text-secondary" style="line-height: 1.7;">
+      {{ post.post_description if post.post_description else 'No description.' }}
+    </div>
+  </div>
+</div>
+
+<div class="card shadow-sm border-0 rounded-3">
+  <div class="card-header bg-white pt-4 pb-3 border-bottom border-light">
+    <h5 class="fw-bold text-dark m-0">Comments</h5>
+  </div>
+  <div class="card-body p-4">
+    {% if comments %}
+      <div class="mb-4">
+        {% for c in comments %}
+          <div class="border rounded-3 p-3 mb-3 bg-light">
+            <div class="d-flex justify-content-between">
+              <div class="fw-semibold text-dark">{{ c.author_name }}</div>
+              <div class="small text-muted">{{ c.comment_start }}</div>
+            </div>
+            <div class="text-secondary mt-2">{{ c.comment_content }}</div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="text-muted mb-4">No comments yet. Be the first to comment.</div>
+    {% endif %}
+
+    <form method="POST" action="{{ url_for('discussion_add_comment', post_id=post.post_id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="mb-3">
+        <label class="form-label fw-semibold">Add a comment</label>
+        <textarea class="form-control bg-light" name="comment_content" rows="3" required maxlength="2000" placeholder="Write something..."></textarea>
+      </div>
+      <button type="submit" class="btn btn-primary rounded-pill px-4 fw-bold">Post Comment</button>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
