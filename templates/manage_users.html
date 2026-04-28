@@ -1,0 +1,196 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>Quản lý Người Dùng</h2>
+    
+    <button type="button" class="btn btn-primary mb-3" data-bs-toggle="modal" data-bs-target="#addUserModal">
+        + Thêm Người Dùng
+    </button>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+            {{ message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+          </div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <div class="modal fade" id="addUserModal" tabindex="-1">
+      <div class="modal-dialog modal-lg">
+        <form action="{{ url_for('create_user') }}" method="POST" class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Thêm Người Dùng Mới</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <div class="row g-3">
+              <div class="col-md-4">
+                <label>Vai trò *</label>
+                <select class="form-select" name="role" required>
+                  <option value="Student">Sinh viên</option>
+                  <option value="Lecturer">Giảng viên</option>
+                  <option value="Admin">Quản trị viên</option>
+                </select>
+              </div>
+              <div class="col-md-4">
+                <label>Mã định danh (MSSV/MSGV) *</label>
+                <input type="text" class="form-control" name="userCode" required>
+              </div>
+              <div class="col-md-4">
+                <label>Trình độ (Degree)</label>
+                <select class="form-select" name="degree">
+                  <option value="Bachelor">Bachelor</option>
+                  <option value="Master">Master</option>
+                  <option value="PhD">PhD</option>
+                </select>
+              </div>
+              <div class="col-md-4">
+                <label>Họ *</label>
+                <input type="text" class="form-control" name="firstName" required>
+              </div>
+              <div class="col-md-4">
+                <label>Tên đệm</label>
+                <input type="text" class="form-control" name="middleName">
+              </div>
+              <div class="col-md-4">
+                <label>Tên *</label>
+                <input type="text" class="form-control" name="lastName" required>
+              </div>
+              <div class="col-md-4">
+                <label>Giới tính *</label>
+                <select class="form-select" name="sex" required>
+                  <option value="Male">Nam</option>
+                  <option value="Female">Nữ</option>
+                  <option value="Other">Khác</option>
+                </select>
+              </div>
+              <div class="col-md-8">
+                <label>Email *</label>
+                <input type="email" class="form-control" name="email" required>
+              </div>
+              <div class="col-md-6">
+                <label>Ngày sinh *</label>
+                <input type="date" class="form-control" name="birthday" required>
+              </div>
+              <div class="col-md-6">
+                <label>Quốc tịch *</label>
+                <input type="text" class="form-control" name="nationality" required>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="submit" class="btn btn-primary">Tạo người dùng</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <table class="table table-bordered">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Họ Tên</th>
+                <th>Email</th>
+                <th>Thao tác</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for user in users %}
+            <tr>
+                <td>{{ user.id }}</td>
+                <td>{{ user.lastName }} {{ user.middleName }} {{ user.firstName }}</td>
+                <td>{{ user.email }}</td>
+                <td>
+                    <button class="btn btn-warning btn-sm" data-bs-toggle="modal" data-bs-target="#editUserModal_{{ user.id }}">Sửa</button>
+                    <button class="btn btn-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#changePassModal_{{ user.id }}">Đổi Pass</button>
+                    <form action="{{ url_for('delete_user') }}" method="POST" style="display:inline; margin-left: 0.5rem;">
+                        <input type="hidden" name="user_id" value="{{ user.id }}">
+                        <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Bạn có chắc chắn muốn xóa?')">Xóa</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    {% for user in users %}
+    <div class="modal fade" id="editUserModal_{{ user.id }}" tabindex="-1">
+      <div class="modal-dialog">
+        <form action="{{ url_for('update_user') }}" method="POST" class="modal-content">
+          <input type="hidden" name="user_id" value="{{ user.id }}">
+          <div class="modal-header">
+            <h5 class="modal-title">Cập nhật thông tin</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <div class="mb-3">
+              <label class="form-label">Họ</label>
+              <input type="text" class="form-control" name="firstName" value="{{ user.firstName }}" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Tên đệm</label>
+              <input type="text" class="form-control" name="middleName" value="{{ user.middleName }}">
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Tên</label>
+              <input type="text" class="form-control" name="lastName" value="{{ user.lastName }}" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Giới tính</label>
+              <select class="form-select" name="sex" required>
+                <option value="Male" {% if user.sex == 'Male' %}selected{% endif %}>Nam</option>
+                <option value="Female" {% if user.sex == 'Female' %}selected{% endif %}>Nữ</option>
+                <option value="Other" {% if user.sex == 'Other' %}selected{% endif %}>Khác</option>
+              </select>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Email</label>
+              <input type="email" class="form-control" name="email" value="{{ user.email }}" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Ngày sinh</label>
+              <input type="date" class="form-control" name="birthday" value="{{ user.birthday }}" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Quốc tịch</label>
+              <input type="text" class="form-control" name="nationality" value="{{ user.nationality }}" required>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="submit" class="btn btn-warning">Lưu thay đổi</button>
+          </div>
+        </form>
+      </div>
+    </div>
+    <div class="modal fade" id="changePassModal_{{ user.id }}" tabindex="-1">
+      <div class="modal-dialog">
+        <form action="{{ url_for('change_password') }}" method="POST" class="modal-content">
+          <input type="hidden" name="user_id" value="{{ user.id }}">
+          <div class="modal-header">
+            <h5 class="modal-title">Đổi mật khẩu</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <div class="mb-3">
+              <label class="form-label">Mật khẩu cũ</label>
+              <input type="password" class="form-control" name="oldPassword" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Mật khẩu mới</label>
+              <input type="password" class="form-control" name="newPassword" required>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="submit" class="btn btn-secondary">Đổi mật khẩu</button>
+          </div>
+        </form>
+      </div>
+    </div>
+    {% endfor %}
+
+</div>
+{% endblock %}

@@ -1,0 +1,55 @@
+{% extends 'base.html' %}
+
+{% block title %}Discussion - {{ class_name }}{% endblock %}
+
+{% block content %}
+<div class="row align-items-center mb-4 mt-2">
+  <div class="col-md-8">
+    <h2 class="text-primary fw-bold mb-1">Discussion</h2>
+    <p class="text-muted mb-0">{{ class_name }}</p>
+  </div>
+  <div class="col-md-4 text-md-end mt-3 mt-md-0">
+    <a href="{{ url_for('class_detail', class_id=class_id) }}" class="btn btn-outline-secondary rounded-pill px-4 fw-semibold">
+      Back to Class
+    </a>
+    {% if can_create_post %}
+      <a href="{{ url_for('discussion_create_post', class_id=class_id) }}" class="btn btn-primary rounded-pill px-4 fw-bold ms-2">
+        + New Post
+      </a>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card shadow-sm border-0 rounded-3 overflow-hidden">
+  <div class="card-body p-0">
+    {% if posts %}
+      <div class="list-group list-group-flush">
+        {% for p in posts %}
+          <a class="list-group-item list-group-item-action p-4" href="{{ url_for('discussion_post_detail', post_id=p.post_id) }}">
+            <div class="d-flex justify-content-between align-items-start">
+              <div>
+                <div class="fw-bold text-dark fs-5 mb-1">{{ p.post_name }}</div>
+                <div class="text-muted">{{ p.post_description if p.post_description else 'No description' }}</div>
+                <div class="small text-muted mt-2">
+                  By <span class="fw-semibold">{{ p.author_name }}</span>
+                  · {{ p.post_start if p.post_start else '' }}
+                  {% if p.comment_count is not none %}
+                    · {{ p.comment_count }} comments
+                  {% endif %}
+                </div>
+              </div>
+              <span class="badge bg-light text-dark border">#{{ p.post_id }}</span>
+            </div>
+          </a>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="p-5 text-center text-muted">
+        <div class="fs-1 opacity-50 mb-2">💬</div>
+        <div class="fs-5">No posts yet.</div>
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
