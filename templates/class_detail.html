@@ -1,0 +1,95 @@
+{% extends 'base.html' %}
+
+{% block title %}Class Detail - LMS System{% endblock %}
+
+{% block content %}
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <div>
+                <h2 class="fw-bold">{{ class_info.class_name }}</h2>
+                <p class="text-muted mb-0">{{ class_info.subject_name }} &middot; Semester {{ class_info.semester_id }}</p>
+            </div>
+            <a href="{{ url_for('discussion_list', class_id=class_info.class_id) }}" class="btn btn-outline-primary">View Discussion</a>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-8">
+        <div class="card shadow-sm border-0 rounded-3">
+            <div class="card-header bg-white border-bottom-0 py-4">
+                <h5 class="m-0">Class Overview</h5>
+            </div>
+            <div class="card-body p-4">
+                <dl class="row mb-0">
+                    <dt class="col-sm-4 text-muted">Class ID</dt>
+                    <dd class="col-sm-8">{{ class_info.class_id }}</dd>
+
+                    <dt class="col-sm-4 text-muted">Subject</dt>
+                    <dd class="col-sm-8">{{ class_info.subject_name }}</dd>
+
+                    <dt class="col-sm-4 text-muted">Credit</dt>
+                    <dd class="col-sm-8">{{ class_info.credit }}</dd>
+
+                    <dt class="col-sm-4 text-muted">Semester Dates</dt>
+                    <dd class="col-sm-8">{{ class_info.semester_start }} to {{ class_info.semester_end }}</dd>
+
+                    <dt class="col-sm-4 text-muted">Status</dt>
+                    <dd class="col-sm-8">{{ class_info.status_display }}</dd>
+
+                    <dt class="col-sm-4 text-muted">Lecturer</dt>
+                    <dd class="col-sm-8">{{ class_info.lecturer_name or 'TBA' }}</dd>
+                </dl>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card shadow-sm border-0 rounded-3 bg-primary text-white h-100">
+            <div class="card-body d-flex flex-column justify-content-center align-items-start p-4">
+                <h5 class="fw-bold">Enrolled Students</h5>
+                <p class="mb-0 fs-5">{{ students|length }} student{{ 's' if students|length != 1 else '' }}</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card shadow-sm border-0 rounded-3">
+            <div class="card-header bg-white border-bottom border-light py-3">
+                <h5 class="m-0">Student Roster</h5>
+            </div>
+            <div class="card-body p-0">
+                {% if students %}
+                    <div class="table-responsive">
+                        <table class="table mb-0 align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th scope="col">Student ID</th>
+                                    <th scope="col">Name</th>
+                                    <th scope="col">Email</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for student in students %}
+                                    <tr>
+                                        <td>{{ student.s_mssv or 'N/A' }}</td>
+                                        <td>{{ student.firstName }} {{ student.lastName }}</td>
+                                        <td>{{ student.email }}</td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="p-4 text-center text-muted">
+                        <p class="mb-0">No students are currently enrolled in this class.</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

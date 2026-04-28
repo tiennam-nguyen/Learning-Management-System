@@ -1,0 +1,65 @@
+{% extends 'base.html' %}
+
+{% block title %}Dashboard - LMS System{% endblock %}
+
+{% block content %}
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card shadow-sm border-0 bg-white rounded-3">
+            <div class="card-body p-5 text-center">
+                <div class="mb-4">
+                    <!-- Icon based on role -->
+                    {% if role == 'Admin' %}
+                        <span class="fs-1">👑</span>
+                    {% elif role == 'Lecturer' %}
+                        <span class="fs-1">👨‍🏫</span>
+                    {% elif role == 'Student' %}
+                        <span class="fs-1">🎓</span>
+                    {% endif %}
+                </div>
+                
+                <h1 class="display-5 text-primary mb-3 fw-bold">Welcome back, {{ username }}!</h1>
+                <p class="lead text-secondary">You are logged in as: <span class="badge bg-primary fs-6">{{ role }}</span></p>
+                
+                <hr class="my-5 w-50 mx-auto text-muted">
+                
+                <p class="text-muted mb-4">This is a temporary placeholder for the dashboard. In future phases, this will display your courses, schedules, and activities.</p>
+
+                <!-- Quick actions -->
+                <div class="d-flex flex-wrap gap-2 justify-content-center mb-4">
+                    {% if role == 'Student' %}
+                        <a href="{{ url_for('student_dashboard') }}" class="btn btn-primary rounded-pill px-4 fw-bold shadow-sm">
+                            Go to Student Dashboard
+                        </a>
+                    {% elif role == 'Admin' %}
+                        <a href="{{ url_for('user_management') }}" class="btn btn-primary rounded-pill px-4 fw-bold shadow-sm">
+                            Go to User Management
+                        </a>
+                    {% endif %}
+                </div>
+                
+                <div class="row justify-content-center mt-4">
+                    <div class="col-md-6">
+                        {% if role == 'Admin' %}
+                            <div class="alert alert-info border-info border-start border-5 shadow-sm">
+                                <h5 class="alert-heading fw-bold">Admin Controls</h5>
+                                <p class="mb-0">System management, user creation, and advanced settings will appear here.</p>
+                            </div>
+                        {% elif role == 'Lecturer' %}
+                            <div class="alert alert-success border-success border-start border-5 shadow-sm">
+                                <h5 class="alert-heading fw-bold">Lecturer Modules</h5>
+                                <p class="mb-0">Course management, grading, and material uploads will appear here.</p>
+                            </div>
+                        {% elif role == 'Student' %}
+                            <div class="alert alert-warning border-warning border-start border-5 shadow-sm">
+                                <h5 class="alert-heading fw-bold">Student Dashboard</h5>
+                                <p class="mb-0">Your enrolled courses, assignments, and test scores will appear here.</p>
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

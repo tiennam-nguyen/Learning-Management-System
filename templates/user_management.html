@@ -1,0 +1,374 @@
+{% extends 'base.html' %}
+
+{% block title %}User Management - LMS System{% endblock %}
+
+{% block content %}
+<div class="row mb-4 align-items-center mt-2">
+    <div class="col-md-8">
+        <h2 class="text-primary fw-bold mb-1">User Management</h2>
+        <p class="text-muted mb-0">Manage students, lecturers, and administrators.</p>
+    </div>
+    <div class="col-md-4 text-md-end mt-3 mt-md-0">
+        <button type="button" class="btn btn-primary shadow-sm rounded-pill px-4 fw-bold" data-bs-toggle="modal" data-bs-target="#addUserModal">
+            + Add New User
+        </button>
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="card shadow-sm border-0 rounded-4 overflow-hidden mb-4">
+    <div class="card-body p-4">
+        <form class="row g-3 align-items-end" method="GET" action="{{ url_for('user_management') }}">
+            <div class="col-md-6">
+                <label class="form-label fw-semibold">Search</label>
+                <input class="form-control bg-light" name="q" value="{{ filters.q }}" placeholder="Name, email, code...">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label fw-semibold">Role</label>
+                <select class="form-select bg-light" name="role">
+                    <option value="All" {% if filters.role == 'All' %}selected{% endif %}>All</option>
+                    <option value="Student" {% if filters.role == 'Student' %}selected{% endif %}>Student</option>
+                    <option value="Lecturer" {% if filters.role == 'Lecturer' %}selected{% endif %}>Lecturer</option>
+                    <option value="Admin" {% if filters.role == 'Admin' %}selected{% endif %}>Admin</option>
+                </select>
+            </div>
+            <div class="col-md-3 d-grid">
+                <button class="btn btn-outline-primary rounded-pill fw-bold" type="submit">Apply</button>
+            </div>
+            <input type="hidden" name="per_page" value="{{ pagination.per_page }}">
+        </form>
+
+        <div class="small text-muted mt-3">
+            Total: <span class="fw-semibold">{{ pagination.total }}</span>
+            · Page <span class="fw-semibold">{{ pagination.page }}</span> / {{ pagination.pages }}
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm border-0 rounded-4 overflow-hidden mb-5">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="bg-light">
+                    <tr>
+                        <th class="py-3 px-4 text-muted fw-semibold">ID</th>
+                        <th class="py-3 px-4 text-muted fw-semibold">Code</th>
+                        <th class="py-3 px-4 text-muted fw-semibold">Full Name</th>
+                        <th class="py-3 px-4 text-muted fw-semibold">Role</th>
+                        <th class="py-3 px-4 text-muted fw-semibold">Email</th>
+                        <th class="py-3 px-4 text-muted fw-semibold text-center">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for user in users %}
+                    <tr>
+                        <td class="px-4 fw-bold text-secondary">#{{ user.id }}</td>
+                        <td class="px-4"><span class="badge bg-secondary">{{ user.user_code }}</span></td>
+                        <td class="px-4 fw-semibold text-dark">{{ user.firstName }} {{ user.middleName }} {{ user.lastName }}</td>
+                        <td class="px-4">
+                            {% if user.role == 'Admin' %}
+                                <span class="badge bg-danger rounded-pill">{{ user.role }}</span>
+                            {% elif user.role == 'Lecturer' %}
+                                <span class="badge bg-success rounded-pill">{{ user.role }}</span>
+                            {% else %}
+                                <span class="badge bg-primary rounded-pill">{{ user.role }}</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-4 text-muted">{{ user.email }}</td>
+                        <td class="px-4 text-center">
+                            <button type="button" class="btn btn-sm btn-outline-primary rounded-pill px-3 me-1 mb-1" 
+                                data-bs-toggle="modal" data-bs-target="#editUserModal"
+                                data-id="{{ user.id }}"
+                                data-firstname="{{ user.firstName }}"
+                                data-middlename="{{ user.middleName }}"
+                                data-lastname="{{ user.lastName }}"
+                                data-sex="{{ user.sex }}"
+                                data-email="{{ user.email }}"
+                                data-birthday="{{ user.birthday }}"
+                                data-nationality="{{ user.nationality }}">
+                                Edit
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-warning rounded-pill px-3 me-1 mb-1" 
+                                data-bs-toggle="modal" data-bs-target="#changePasswordModal"
+                                data-id="{{ user.id }}">
+                                Password
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-danger rounded-pill px-3 mb-1" 
+                                data-bs-toggle="modal" data-bs-target="#deleteUserModal"
+                                data-id="{{ user.id }}"
+                                data-name="{{ user.firstName }} {{ user.lastName }}">
+                                Delete
+                            </button>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="6" class="text-center py-5 text-muted fst-italic">No users found.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Pagination -->
+{% if pagination.pages > 1 %}
+<nav aria-label="User list pages" class="mb-5">
+    <ul class="pagination justify-content-center">
+        <li class="page-item {% if pagination.page <= 1 %}disabled{% endif %}">
+            <a class="page-link" href="{{ url_for('user_management', q=filters.q, role=filters.role, page=pagination.page-1, per_page=pagination.per_page) }}">Prev</a>
+        </li>
+        <li class="page-item disabled">
+            <span class="page-link">Page {{ pagination.page }} / {{ pagination.pages }}</span>
+        </li>
+        <li class="page-item {% if pagination.page >= pagination.pages %}disabled{% endif %}">
+            <a class="page-link" href="{{ url_for('user_management', q=filters.q, role=filters.role, page=pagination.page+1, per_page=pagination.per_page) }}">Next</a>
+        </li>
+    </ul>
+</nav>
+{% endif %}
+
+<!-- ================= MODALS ================= -->
+
+<!-- 1. Add User Modal -->
+<div class="modal fade" id="addUserModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content border-0 shadow-lg rounded-4">
+      <div class="modal-header border-bottom-0 pt-4 pb-0 px-4">
+        <h5 class="modal-title fw-bold text-primary">Create New User</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form action="{{ url_for('create_user') }}" method="POST">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <div class="modal-body p-4">
+              <div class="row g-3">
+                  <div class="col-md-6">
+                      <label class="form-label fw-semibold">Role</label>
+                      <select class="form-select bg-light" name="role" id="addRole" required onchange="toggleDegreeInput()">
+                          <option value="Student" selected>Student</option>
+                          <option value="Lecturer">Lecturer</option>
+                          <option value="Admin">Admin</option>
+                      </select>
+                  </div>
+                  <div class="col-md-6">
+                      <label class="form-label fw-semibold">User Code (MSSV/MSGV/MSQT)</label>
+                      <input type="text" class="form-control bg-light" name="userCode" required>
+                  </div>
+                  <div class="col-md-4">
+                      <label class="form-label fw-semibold">First Name</label>
+                      <input type="text" class="form-control bg-light" name="firstName" required>
+                  </div>
+                  <div class="col-md-4">
+                      <label class="form-label fw-semibold">Middle Name</label>
+                      <input type="text" class="form-control bg-light" name="middleName">
+                  </div>
+                  <div class="col-md-4">
+                      <label class="form-label fw-semibold">Last Name</label>
+                      <input type="text" class="form-control bg-light" name="lastName" required>
+                  </div>
+                  <div class="col-md-6">
+                      <label class="form-label fw-semibold">Email</label>
+                      <input type="email" class="form-control bg-light" name="email" required>
+                  </div>
+                  <div class="col-md-6">
+                      <label class="form-label fw-semibold">Gender</label>
+                      <select class="form-select bg-light" name="sex" required>
+                          <option value="Male">Male</option>
+                          <option value="Female">Female</option>
+                          <option value="Other">Other</option>
+                      </select>
+                  </div>
+                  <div class="col-md-6">
+                      <label class="form-label fw-semibold">Birthday</label>
+                      <input type="date" class="form-control bg-light" name="birthday">
+                  </div>
+                  <div class="col-md-6">
+                      <label class="form-label fw-semibold">Nationality</label>
+                      <input type="text" class="form-control bg-light" name="nationality">
+                  </div>
+                  <div class="col-12" id="degreeGroup" style="display: none;">
+                      <label class="form-label fw-semibold">Degree (For Lecturer/Admin)</label>
+                      <select class="form-select bg-light" name="degree">
+                          <option value="Bachelor">Bachelor</option>
+                          <option value="Master">Master</option>
+                          <option value="PhD">PhD</option>
+                      </select>
+                  </div>
+              </div>
+          </div>
+          <div class="modal-footer border-top-0 px-4 pb-4">
+            <button type="button" class="btn btn-outline-secondary rounded-pill px-4 fw-bold" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-primary rounded-pill px-4 fw-bold shadow-sm">Save User</button>
+          </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- 2. Edit User Modal -->
+<div class="modal fade" id="editUserModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content border-0 shadow-lg rounded-4">
+      <div class="modal-header border-bottom-0 pt-4 pb-0 px-4">
+        <h5 class="modal-title fw-bold text-primary">Edit User Information</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form action="{{ url_for('update_user') }}" method="POST">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <div class="modal-body p-4">
+              <input type="hidden" name="user_id" id="editUserId">
+              <div class="row g-3">
+                  <div class="col-md-4">
+                      <label class="form-label fw-semibold">First Name</label>
+                      <input type="text" class="form-control bg-light" name="firstName" id="editFirstName" required>
+                  </div>
+                  <div class="col-md-4">
+                      <label class="form-label fw-semibold">Middle Name</label>
+                      <input type="text" class="form-control bg-light" name="middleName" id="editMiddleName">
+                  </div>
+                  <div class="col-md-4">
+                      <label class="form-label fw-semibold">Last Name</label>
+                      <input type="text" class="form-control bg-light" name="lastName" id="editLastName" required>
+                  </div>
+                  <div class="col-md-6">
+                      <label class="form-label fw-semibold">Email</label>
+                      <input type="email" class="form-control bg-light" name="email" id="editEmail" required>
+                  </div>
+                  <div class="col-md-6">
+                      <label class="form-label fw-semibold">Gender</label>
+                      <select class="form-select bg-light" name="sex" id="editSex" required>
+                          <option value="Male">Male</option>
+                          <option value="Female">Female</option>
+                          <option value="Other">Other</option>
+                      </select>
+                  </div>
+                  <div class="col-md-6">
+                      <label class="form-label fw-semibold">Birthday</label>
+                      <input type="date" class="form-control bg-light" name="birthday" id="editBirthday">
+                  </div>
+                  <div class="col-md-6">
+                      <label class="form-label fw-semibold">Nationality</label>
+                      <input type="text" class="form-control bg-light" name="nationality" id="editNationality">
+                  </div>
+              </div>
+          </div>
+          <div class="modal-footer border-top-0 px-4 pb-4">
+            <button type="button" class="btn btn-outline-secondary rounded-pill px-4 fw-bold" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-primary rounded-pill px-4 fw-bold shadow-sm">Update Information</button>
+          </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- 3. Change Password Modal -->
+<div class="modal fade" id="changePasswordModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-0 shadow-lg rounded-4">
+      <div class="modal-header border-bottom-0 pt-4 pb-0 px-4">
+        <h5 class="modal-title fw-bold text-warning">Change Password</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form action="{{ url_for('change_password') }}" method="POST">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <div class="modal-body p-4">
+              <input type="hidden" name="user_id" id="pwdUserId">
+              <div class="mb-3">
+                  <label class="form-label fw-semibold">Old Password</label>
+                  <input type="password" class="form-control bg-light" name="oldPassword" required>
+              </div>
+              <div class="mb-3">
+                  <label class="form-label fw-semibold">New Password</label>
+                  <input type="password" class="form-control bg-light" name="newPassword" required>
+              </div>
+          </div>
+          <div class="modal-footer border-top-0 px-4 pb-4">
+            <button type="button" class="btn btn-outline-secondary rounded-pill px-4 fw-bold" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-warning text-dark rounded-pill px-4 fw-bold shadow-sm">Change Password</button>
+          </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- 4. Delete User Modal -->
+<div class="modal fade" id="deleteUserModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-0 shadow-lg rounded-4">
+      <div class="modal-header border-bottom-0 pt-4 pb-0 px-4">
+        <h5 class="modal-title fw-bold text-danger">Delete User</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form action="{{ url_for('delete_user') }}" method="POST">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <div class="modal-body p-4">
+              <input type="hidden" name="user_id" id="deleteUserId">
+              <p class="fs-5 mb-0 text-center">Are you sure you want to delete <strong id="deleteUserName"></strong>?</p>
+              <div class="alert alert-danger mt-4 mb-0 border-0 shadow-sm">
+                  <i class="bi bi-exclamation-triangle-fill me-2"></i> <strong>Warning:</strong> This action cannot be undone. All associated records (enrollments, test scores) will be permanently deleted due to cascading rules.
+              </div>
+          </div>
+          <div class="modal-footer border-top-0 px-4 pb-4 justify-content-center">
+            <button type="button" class="btn btn-outline-secondary rounded-pill px-4 fw-bold" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-danger rounded-pill px-4 fw-bold shadow-sm">Yes, Delete Permanently</button>
+          </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- JavaScript to populate modals safely -->
+<script>
+    function toggleDegreeInput() {
+        var role = document.getElementById('addRole').value;
+        var degreeGroup = document.getElementById('degreeGroup');
+        if(role === 'Lecturer' || role === 'Admin') {
+            degreeGroup.style.display = 'block';
+        } else {
+            degreeGroup.style.display = 'none';
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        var editModal = document.getElementById('editUserModal');
+        if (editModal) {
+            editModal.addEventListener('show.bs.modal', function (event) {
+                var button = event.relatedTarget;
+                document.getElementById('editUserId').value = button.getAttribute('data-id');
+                document.getElementById('editFirstName').value = button.getAttribute('data-firstname');
+                
+                var mName = button.getAttribute('data-middlename');
+                document.getElementById('editMiddleName').value = (mName !== 'None' && mName !== '') ? mName : '';
+                
+                document.getElementById('editLastName').value = button.getAttribute('data-lastname');
+                document.getElementById('editSex').value = button.getAttribute('data-sex');
+                document.getElementById('editEmail').value = button.getAttribute('data-email');
+                
+                var bDay = button.getAttribute('data-birthday');
+                document.getElementById('editBirthday').value = (bDay !== 'None' && bDay !== '') ? bDay : '';
+                
+                var nat = button.getAttribute('data-nationality');
+                document.getElementById('editNationality').value = (nat !== 'None' && nat !== '') ? nat : '';
+            });
+        }
+
+        var pwdModal = document.getElementById('changePasswordModal');
+        if (pwdModal) {
+            pwdModal.addEventListener('show.bs.modal', function (event) {
+                var button = event.relatedTarget;
+                document.getElementById('pwdUserId').value = button.getAttribute('data-id');
+            });
+        }
+
+        var deleteModal = document.getElementById('deleteUserModal');
+        if (deleteModal) {
+            deleteModal.addEventListener('show.bs.modal', function (event) {
+                var button = event.relatedTarget;
+                document.getElementById('deleteUserId').value = button.getAttribute('data-id');
+                document.getElementById('deleteUserName').innerText = button.getAttribute('data-name');
+            });
+        }
+    });
+</script>
+{% endblock %}
