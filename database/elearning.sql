@@ -101,6 +101,7 @@ CREATE TABLE Class (
 CREATE TABLE Enrollment (
     student_id INT,
     class_id INT,
+    is_allowed_to_discuss BOOLEAN DEFAULT TRUE,
     PRIMARY KEY (student_id, class_id),
     FOREIGN KEY (student_id) REFERENCES Student(id) ON DELETE CASCADE,
     FOREIGN KEY (class_id) REFERENCES Class(class_id) ON DELETE CASCADE
