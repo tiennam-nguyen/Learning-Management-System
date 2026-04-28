@@ -3,6 +3,7 @@ import mysql.connector
 from dotenv import load_dotenv
 import os
 
+
 def get_db_connection():
     return mysql.connector.connect(
         host=os.getenv('DB_HOST'),
@@ -15,7 +16,7 @@ app = Flask(__name__)
 app.secret_key = 'dev_secret_key'
 
 @app.context_processor
-def inject_csrf(): 
+def inject_csrf():
     return dict(csrf_token='mock_csrf_token')
 
 @app.route('/')
@@ -759,3 +760,36 @@ def discussion_post_detail(post_id):
         can_comment=True,
     )
 
+@app.route('/discussion/post/<int:post_id>/comment', methods=['POST'])
+def discussion_add_comment(post_id):
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+
+    content = (request.form.get('comment_content') or '').strip()
+    if not content:
+        flash('Comment content cannot be empty.', 'danger')
+        return redirect(url_for('discussion_post_detail', post_id=post_id))
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO Comment (comment_content, post_id, ua_id) VALUES (%s, %s, %s)",
+            (content, post_id, session['user_id']),
+        )
+        conn.commit()
+        flash('Comment posted successfully.', 'success')
+    except mysql.connector.Error as e:
+        if conn and conn.is_connected():
+            conn.rollback()
+        flash(f"Database error: {e}", 'danger')
+    finally:
+        if 'cursor' in locals() and cursor:
+            cursor.close()
+        if 'conn' in locals() and conn.is_connected():
+            conn.close()
+
+    return redirect(url_for('discussion_post_detail', post_id=post_id))
+
+if __name__ == '__main__':
+    app.run(debug=True)
