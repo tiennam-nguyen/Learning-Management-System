@@ -14,6 +14,10 @@ def get_db_connection():
 app = Flask(__name__)
 app.secret_key = 'dev_secret_key'
 
+@app.context_processor
+def inject_csrf():
+    return dict(csrf_token='mock_csrf_token')
+
 @app.route('/')
 def index():
     return redirect(url_for('login'))
