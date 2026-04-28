@@ -3,7 +3,6 @@ import mysql.connector
 from dotenv import load_dotenv
 import os
 
-
 def get_db_connection():
     return mysql.connector.connect(
         host=os.getenv('DB_HOST'),
@@ -14,10 +13,6 @@ def get_db_connection():
 
 app = Flask(__name__)
 app.secret_key = 'dev_secret_key'
-
-@app.context_processor
-def inject_csrf():
-    return dict(csrf_token='mock_csrf_token')
 
 @app.route('/')
 def index():
