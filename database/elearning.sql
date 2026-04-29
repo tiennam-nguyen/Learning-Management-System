@@ -283,6 +283,14 @@ ALTER TABLE Comment
 ADD CONSTRAINT fk_comment_parent 
 FOREIGN KEY (parent_comment_id) REFERENCES Comment(comment_id) ON DELETE CASCADE;
 
+-- Luu tru thong tin cac thiet bi dang dang nhap
+CREATE TABLE User_Session (
+    session_id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    device_id VARCHAR(255) NOT NULL, -- Định danh thiết bị (ví dụ: MAC address hoặc Browser ID)
+    login_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES User(id) ON DELETE CASCADE
+);
 
 -- ------------------------------------------------------------
 -- 9. TRIGGER & HÀM HỖ TRỢ
@@ -302,6 +310,23 @@ BEGIN
     UPDATE Test 
     SET chapter_id = NULL 
     WHERE class_id = OLD.class_id AND chapter_id = OLD.chapter_id;
+END//
+
+-- Tinh toan va kiem tra so thiet bi dang nhap (dam bao khong vuot qua 3 thiet bi)
+CREATE TRIGGER trg_LimitUserDevices
+BEFORE INSERT ON User_Session
+FOR EACH ROW
+BEGIN
+    DECLARE v_device_count INT;
+
+    SELECT COUNT(*) INTO v_device_count
+    FROM User_Session
+    WHERE user_id = NEW.user_id;
+
+    IF v_device_count >= 3 THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Lỗi: Tài khoản đã đăng nhập trên 3 thiết bị. Vui lòng đăng xuất bớt!';
+    END IF;
 END//
 
 -- Hàm tính điểm
@@ -796,6 +821,26 @@ INSERT INTO Comment (comment_content, post_id, ua_id, parent_comment_id) VALUES
 INSERT INTO Comment (comment_content, post_id, ua_id, parent_comment_id) VALUES
 ('Dạ em cảm ơn thầy nhiều!', 1, 1, 6);                 -- Trả lời cho ID 6 (An trả lời lại thầy)
 
+-- An (ID 1) đăng nhập trên 2 thiết bị
+INSERT INTO User_Session (user_id, device_id) VALUES (1, 'LAPTOP-DELL-AN-01');
+INSERT INTO User_Session (user_id, device_id) VALUES (1, 'IPHONE-13-AN-02');
+
+-- Binh (ID 2) đăng nhập trên 1 thiết bị
+INSERT INTO User_Session (user_id, device_id) VALUES (2, 'MACBOOK-BINH-01');
+
+-- Chau (ID 3) đăng nhập trên 1 thiết bị
+INSERT INTO User_Session (user_id, device_id) VALUES (3, 'ANDROID-CHAU-01');
+
+-- Giang (ID 5) đăng nhập trên 2 thiết bị
+INSERT INTO User_Session (user_id, device_id) VALUES (5, 'IPAD-GIANG-01');
+INSERT INTO User_Session (user_id, device_id) VALUES (5, 'PC-GIANG-02');
+-- Duc (ID 4) sử dụng hết 3 slot đăng nhập cho phép
+INSERT INTO User_Session (user_id, device_id) VALUES (4, 'DUC-PC-GAMING');
+INSERT INTO User_Session (user_id, device_id) VALUES (4, 'DUC-LAPTOP-OFFICE');
+INSERT INTO User_Session (user_id, device_id) VALUES (4, 'DUC-PHONE-SAMSUNG');
+-- CỐ GẮNG chèn thiết bị thứ 4 cho Duc (ID 4)
+-- Kết quả kỳ vọng: MySQL báo lỗi 'Lỗi: Tài khoản đã đăng nhập trên 3 thiết bị...'
+-- INSERT INTO User_Session (user_id, device_id) VALUES (4, 'DUC-TABLET-UNKNOWN');
 
 -- ============================================================
 -- KẾT THÚC
