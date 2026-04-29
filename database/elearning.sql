@@ -35,7 +35,7 @@ CREATE TABLE Subject (
     credit INT NOT NULL DEFAULT 3,
     faculty_id INT NOT NULL,
     FOREIGN KEY (faculty_id) REFERENCES Faculty(faculty_id),
-    CONSTRAINT chk_credit_positive CHECK (credit > 0)
+    CONSTRAINT chk_credit CHECK (credit >= 0 AND credit <= 4)
 );
 
 -- ------------------------------------------------------------
@@ -88,20 +88,25 @@ CREATE TABLE User_acc (
 CREATE TABLE Class (
     class_id INT AUTO_INCREMENT PRIMARY KEY,
     class_name VARCHAR(100) NOT NULL,
+    class_code VARCHAR(20) NOT NULL, -- them class_code
     subject_id INT NOT NULL,
     semester_id INT NOT NULL,
     status_id INT NOT NULL,
-    lecturer_id INT,
+    lecturer_id INT NULL, -- update them NULL
+    max_students INT DEFAULT 40,
+    
     FOREIGN KEY (subject_id) REFERENCES Subject(subject_id),
     FOREIGN KEY (semester_id) REFERENCES Semester(semester_id),
     FOREIGN KEY (status_id) REFERENCES Status(status_id),
-    FOREIGN KEY (lecturer_id) REFERENCES Lecturer(id)
+    FOREIGN KEY (lecturer_id) REFERENCES Lecturer(id) ON DELETE SET NULL, -- set NULL neu xoa gv ra khoi lop hoc
+    -- Dam bao khong trung ma lop trong cung mot mon o hoc ky cu the
+    CONSTRAINT unique_class_per_semester UNIQUE (class_code, subject_id, semester_id),
+    CONSTRAINT chk_max_students_pos CHECK (max_students > 0) -- Dam bao si so luon duong
 );
 
 CREATE TABLE Enrollment (
     student_id INT,
     class_id INT,
-    is_allowed_to_discuss BOOLEAN DEFAULT TRUE,
     PRIMARY KEY (student_id, class_id),
     FOREIGN KEY (student_id) REFERENCES Student(id) ON DELETE CASCADE,
     FOREIGN KEY (class_id) REFERENCES Class(class_id) ON DELETE CASCADE
@@ -114,6 +119,7 @@ CREATE TABLE Chapter (
     class_id INT,
     chapter_id INT,
     chapter_name VARCHAR(255) NOT NULL,
+    description TEXT, -- add description
     PRIMARY KEY (class_id, chapter_id),
     FOREIGN KEY (class_id) REFERENCES Class(class_id) ON DELETE CASCADE
 );
@@ -136,11 +142,11 @@ CREATE TABLE File (
     file_id INT,
     file_name VARCHAR(255) NOT NULL,
     file_path VARCHAR(512) NOT NULL,
-    file_size INT NOT NULL COMMENT 'Kích thước file (MB)',
+    file_size DECIMAL(10, 2) NOT NULL COMMENT 'Kích thước file (MB)', -- change INT to DECIMAL 2
     update_date DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (class_id, chapter_id, topic_id, file_id),
     FOREIGN KEY (class_id, chapter_id, topic_id) REFERENCES Topic(class_id, chapter_id, topic_id) ON DELETE CASCADE,
-    CONSTRAINT chk_file_size CHECK (file_size <= 200)
+    CONSTRAINT chk_file_size CHECK (file_size > 0 AND file_size <= 200) -- add file_size > 0
 );
 
 -- ------------------------------------------------------------
@@ -149,13 +155,15 @@ CREATE TABLE File (
 CREATE TABLE Test (
     test_id INT AUTO_INCREMENT PRIMARY KEY,
     test_name VARCHAR(255) NOT NULL,
-    test_start DATETIME,
-    test_end DATETIME,
+    test_start DATETIME NOT NULL,
+    test_end DATETIME NOT NULL,
     test_timer INT COMMENT 'Thời gian làm bài (phút)',
     class_id INT NOT NULL,
-    chapter_id INT,
-    FOREIGN KEY (class_id) REFERENCES Class(class_id),
-    FOREIGN KEY (class_id, chapter_id) REFERENCES Chapter(class_id, chapter_id),
+    chapter_id INT NULL,
+
+    CONSTRAINT fk_test_class 
+        FOREIGN KEY (class_id) REFERENCES Class(class_id) 
+        ON DELETE CASCADE,
     CONSTRAINT chk_test_dates CHECK (test_start < test_end)
 );
 
@@ -168,8 +176,12 @@ CREATE TABLE Quiz (
 CREATE TABLE File_submission (
     test_id INT PRIMARY KEY,
     fs_id VARCHAR(50) UNIQUE NOT NULL,
+    file_size DECIMAL(10, 2) NOT NULL,
+    allowed_extensions VARCHAR(255) DEFAULT '.pdf, .docx, .zip, .tar', 
     path VARCHAR(512),
-    FOREIGN KEY (test_id) REFERENCES Test(test_id) ON DELETE CASCADE
+    FOREIGN KEY (test_id) REFERENCES Test(test_id) ON DELETE CASCADE,
+    
+    CONSTRAINT chk_fSize CHECK (file_size > 0 AND file_size <= 200) -- add check
 );
 
 -- ------------------------------------------------------------
@@ -247,12 +259,14 @@ CREATE TABLE Post (
     post_id INT AUTO_INCREMENT PRIMARY KEY,
     post_name VARCHAR(255) NOT NULL,
     post_description TEXT,
-    post_start DATETIME,
-    post_end DATETIME,
+    post_start DATETIME DEFAULT CURRENT_TIMESTAMP,
+    post_end DATETIME NULL,
     ua_id INT NOT NULL,
     class_id INT NOT NULL,
     FOREIGN KEY (ua_id) REFERENCES User_acc(ua_id),
-    FOREIGN KEY (class_id) REFERENCES Class(class_id) ON DELETE CASCADE
+    FOREIGN KEY (class_id) REFERENCES Class(class_id) ON DELETE CASCADE,
+    -- add constraint
+    CONSTRAINT chk_post_time CHECK (post_end IS NULL OR post_start < post_end)
 );
 
 CREATE TABLE Comment (
@@ -265,10 +279,33 @@ CREATE TABLE Comment (
     FOREIGN KEY (ua_id) REFERENCES User_acc(ua_id)
 );
 
+ALTER TABLE Comment 
+ADD COLUMN parent_comment_id INT NULL;
+
+ALTER TABLE Comment 
+ADD CONSTRAINT fk_comment_parent 
+FOREIGN KEY (parent_comment_id) REFERENCES Comment(comment_id) ON DELETE CASCADE;
+
+
 -- ------------------------------------------------------------
 -- 9. TRIGGER & HÀM HỖ TRỢ
 -- ------------------------------------------------------------
 DELIMITER //
+
+-- Mô tả: Thay thế cho ràng buộc 'ON DELETE SET NULL' của khóa ngoại (class_id, chapter_id).
+-- Lý do: MySQL không cho phép SET NULL lên khóa ngoại hỗn hợp nếu class_id là NOT NULL.
+-- Hoạt động: Khi xóa một chương (Chapter), cột chapter_id trong bảng Test sẽ về NULL,
+--           giúp giữ lại bài Test cho lớp đó thay vì bị xóa theo (CASCADE).
+DROP TRIGGER IF EXISTS trg_clean_chapter_before_delete //
+
+CREATE TRIGGER trg_clean_chapter_before_delete
+BEFORE DELETE ON Chapter
+FOR EACH ROW
+BEGIN
+    UPDATE Test 
+    SET chapter_id = NULL 
+    WHERE class_id = OLD.class_id AND chapter_id = OLD.chapter_id;
+END//
 
 -- Hàm tính điểm
 CREATE FUNCTION calculate_score(p_attempt_id INT) RETURNS DECIMAL(7,2)
@@ -581,13 +618,13 @@ INSERT INTO User (firstName, middleName, lastName, sex, email, birthday, nationa
 ('Hoang', 'Thi', 'Giang', 'Female', 'giang.hoang@hcmut.edu.vn', '2001-05-05', 'Vietnam'),
 ('Vo', 'Van', 'Hai', 'Male', 'hai.vo@hcmut.edu.vn', '1985-09-12', 'Vietnam'),
 ('Dang', 'Thi', 'Lan', 'Female', 'lan.dang@hcmut.edu.vn', '1990-12-03', 'Vietnam'),
-('Bui', 'Duc', 'Minh', 'Male', 'minh.bui@hcmut.edu.vn', '1988-04-18', 'Vietnam'),
+('Bui', 'Duc', 'Minh', 'Other', 'minh.bui@hcmut.edu.vn', '1988-04-18', 'Vietnam'),
 ('Ngo', 'Thanh', 'Nga', 'Female', 'nga.ngo@hcmut.edu.vn', '1992-06-25', 'Vietnam'),
 ('Trinh', 'Van', 'Phong', 'Male', 'phong.trinh@hcmut.edu.vn', '1980-10-10', 'Vietnam'),
 ('Ly', 'Thi', 'Quyen', 'Female', 'quyen.ly@hcmut.edu.vn', '1983-11-01', 'Vietnam'),
 ('Mai', 'Van', 'Sang', 'Male', 'sang.mai@hcmut.edu.vn', '1987-02-14', 'Vietnam'),
 ('Do', 'Thi', 'Thuy', 'Female', 'thuy.do@hcmut.edu.vn', '1995-08-20', 'Vietnam'),
-('Phan', 'Van', 'Tuan', 'Male', 'tuan.phan@hcmut.edu.vn', '1982-05-09', 'Vietnam'),
+('Phan', NULL, 'Tuan', 'Male', 'tuan.phan@hcmut.edu.vn', '1982-05-09', 'Vietnam'),
 ('Vu', 'Thi', 'Van', 'Female', 'van.vu@hcmut.edu.vn', '1991-12-30', 'Vietnam');
 
 -- Student
@@ -612,42 +649,46 @@ INSERT INTO Admin (id, a_msqt, degree) VALUES
 
 -- User_acc
 INSERT INTO User_acc (ua_id, ua_username, ua_password, ua_image) VALUES
-(1, 'an.nguyen', SHA2('pass123', 256), NULL),
-(2, 'binh.tran', SHA2('pass123', 256), NULL),
-(3, 'chau.le', SHA2('pass123', 256), NULL),
-(4, 'duc.pham', SHA2('pass123', 256), NULL),
-(5, 'giang.hoang', SHA2('pass123', 256), NULL),
-(6, 'hai.vo', SHA2('gvpass', 256), NULL),
-(7, 'lan.dang', SHA2('gvpass', 256), NULL),
-(8, 'minh.bui', SHA2('gvpass', 256), NULL),
-(9, 'nga.ngo', SHA2('adminpass', 256), NULL),
-(10, 'phong.trinh', SHA2('adminpass', 256), NULL),
-(11, 'quyen.ly', SHA2('gvpass', 256), NULL),
-(12, 'sang.mai', SHA2('gvpass', 256), NULL),
-(13, 'thuy.do', SHA2('adminpass', 256), NULL),
-(14, 'tuan.phan', SHA2('adminpass', 256), NULL),
-(15, 'van.vu', SHA2('adminpass', 256), NULL);
+(1, 'an.nguyen', 'pass123', NULL),
+(2, 'binh.tran', 'pass123', NULL),
+(3, 'chau.le', 'pass123', NULL),
+(4, 'duc.pham', 'pass123', NULL),
+(5, 'giang.hoang', 'pass123', NULL),
+(6, 'hai.vo', 'gvpass', NULL),
+(7, 'lan.dang', 'gvpass', NULL),
+(8, 'minh.bui', 'gvpass', NULL),
+(9, 'nga.ngo', 'adminpass', NULL),
+(10, 'phong.trinh', 'adminpass', NULL),
+(11, 'quyen.ly', 'gvpass', NULL),
+(12, 'sang.mai', 'gvpass', NULL),
+(13, 'thuy.do', 'adminpass', NULL),
+(14, 'tuan.phan', 'adminpass', NULL),
+(15, 'van.vu', 'adminpass', NULL);
 
 -- Class (đảm bảo status_id tương ứng với 'Open' hoặc 'Ongoing' để Test được tạo)
-INSERT INTO Class (class_name, subject_id, semester_id, status_id, lecturer_id) VALUES
-('DB-2025-01', 1, 1, 1, 6),      -- status 'Open'
-('DS-2025-01', 2, 1, 1, 7),      -- 'Open'
-('Circuit-2025-01', 3, 1, 1, 8), -- 'Open'
-('Thermo-2025-01', 4, 1, 1, 11),-- 'Open'
-('Struct-2025-01', 5, 1, 3, 12); -- 'Ongoing' (status_id=3) – vẫn cho phép tạo Test vì trigger chỉ chặn 'Open'? Cần điều chỉnh: thường 'Ongoing' cũng được phép. Trigger của chúng ta chỉ cho 'Open', nên có thể đổi thành 'Open' hoặc sửa trigger. Tôi sẽ giữ nguyên trigger chỉ cho 'Open' và đổi lớp này thành 'Open' luôn cho an toàn.
-UPDATE Class SET status_id = 1 WHERE class_id = 5; -- sửa thành Open
+INSERT INTO Class (class_name, class_code, subject_id, semester_id, status_id, lecturer_id, max_students) VALUES 
+('DB-2025-01', 'L01', 1, 1, 1, 6, 40),      -- Thêm 40 vào cuối
+('DS-2025-01', 'L02', 2, 1, 1, 7, 50),      -- Đã đủ 7
+('Circuit-2025-01', 'L02', 3, 1, 1, 8, 80), -- Đã đủ 7
+('Thermo-2025-01', 'CC01', 4, 1, 1, 11, 50),-- Đã đủ 7
+('Struct-2025-01', 'L01', 5, 1, 1, 12, 100); -- Đã đủ 7 (Đã đổi status_id về 1 để vượt qua trigger Test) 
 
 -- Enrollment
 INSERT INTO Enrollment (student_id, class_id) VALUES
 (1,1), (1,2), (2,1), (2,3), (3,2), (3,4), (4,3), (4,5), (5,1), (5,4);
 
 -- Chapter
-INSERT INTO Chapter (class_id, chapter_id, chapter_name) VALUES
-(1,1,'Introduction'), (1,2,'Relational Model'),
-(2,1,'Arrays'), (2,2,'Linked Lists'),
-(3,1,'Ohm Law'), (3,2,'Kirchhoff Laws'),
-(4,1,'Laws of Thermodynamics'), (4,2,'Entropy'),
-(5,1,'Forces'), (5,2,'Beam Deflection');
+INSERT INTO Chapter (class_id, chapter_id, chapter_name, description) VALUES
+(1, 1, 'Introduction', 'Tổng quan về hệ quản trị cơ sở dữ liệu và các khái niệm cơ bản.'),
+(1, 2, 'Relational Model', 'Chi tiết về mô hình dữ liệu quan hệ, thực thể và liên kết.'),
+(2, 1, 'Arrays', 'Cấu trúc dữ liệu mảng một chiều và đa chiều.'),
+(2, 2, 'Linked Lists', 'Danh sách liên kết đơn, liên kết đôi và các thuật toán liên quan.'),
+(3, 1, 'Ohm Law', 'Định luật Ohm về mối quan hệ giữa điện áp, dòng điện và điện trở.'),
+(3, 2, 'Kirchhoff Laws', 'Các định luật bảo toàn điện tích và năng lượng trong mạch điện.'),
+(4, 1, 'Laws of Thermodynamics', 'Các nguyên lý nhiệt động lực học cơ bản.'),
+(4, 2, 'Entropy', 'Khái niệm về độ hỗn loạn và chiều của quá trình nhiệt.'),
+(5, 1, 'Forces', 'Phân tích lực, moment và điều kiện cân bằng.'),
+(5, 2, 'Beam Deflection', 'Tính toán độ võng của dầm dưới tác dụng của tải trọng.');
 
 -- Topic
 INSERT INTO Topic (class_id, chapter_id, topic_id, topic_name, topic_content) VALUES
@@ -688,12 +729,12 @@ INSERT INTO Quiz (test_id, quizz_id) VALUES
 (1, 'QZ001'), (2, 'QZ002'), (6, 'QZ003'), (7, 'QZ004'), (3, 'QZ005');
 
 -- File_submission
-INSERT INTO File_submission (test_id, fs_id, path) VALUES
-(4, 'FS001', '/submissions/'),
-(5, 'FS002', '/submissions/'),
-(8, 'FS003', '/submissions/'),
-(9, 'FS004', '/submissions/'),
-(10, 'FS005', '/submissions/');
+INSERT INTO File_submission (test_id, fs_id, file_size, path) VALUES
+(4, 'FS001', 50.00, '/submissions/'),
+(5, 'FS002', 50.00, '/submissions/'),
+(8, 'FS003', 100.00, '/submissions/'),
+(9, 'FS004', 200.00, '/submissions/'),
+(10, 'FS005', 20.00, '/submissions/');
 
 -- Question
 INSERT INTO Question (question_type, question_content, max_score) VALUES
@@ -741,12 +782,23 @@ INSERT INTO Post (post_name, post_description, post_start, ua_id, class_id) VALU
 ('Quiz reminder', 'Next Monday', '2025-03-19 08:00:00', 7, 2),
 ('Project groups', 'Form groups of 3', NOW(), 8, 3);
 
-INSERT INTO Comment (comment_content, post_id, ua_id) VALUES
-('Thanks!', 1, 2),
-('When is deadline?', 2, 3),
-('Good material', 3, 4),
-('I will attend', 4, 5),
-('Group 1: A, B, C', 5, 1);
+-- 1. Bình luận gốc (Level 0)
+INSERT INTO Comment (comment_content, post_id, ua_id, parent_comment_id) VALUES
+('Thầy ơi, hạn nộp bài này là khi nào ạ?', 1, 1, NULL), -- ID: 1
+('Thanks!', 1, 2, NULL),                               -- ID: 2
+('When is deadline?', 2, 3, NULL),                     -- ID: 3
+('Good material', 3, 4, NULL),                         -- ID: 4
+('Group 1: A, B, C', 5, 1, NULL);                      -- ID: 5
+
+-- 2. Phản hồi cấp 1 (Level 1)
+INSERT INTO Comment (comment_content, post_id, ua_id, parent_comment_id) VALUES
+('Hạn cuối là chủ nhật tuần này nhé em.', 1, 6, 1),    -- Trả lời cho ID 1 (Thầy trả lời An)
+('Em xem kỹ trong file đính kèm nhé.', 2, 6, 3);       -- Trả lời cho ID 3
+
+-- 3. Phản hồi cấp 2 (Level 2)
+INSERT INTO Comment (comment_content, post_id, ua_id, parent_comment_id) VALUES
+('Dạ em cảm ơn thầy nhiều!', 1, 1, 6);                 -- Trả lời cho ID 6 (An trả lời lại thầy)
+
 
 -- ============================================================
 -- KẾT THÚC
