@@ -671,21 +671,21 @@ INSERT INTO Admin (id, a_msqt, degree) VALUES
 
 -- User_acc
 INSERT INTO User_acc (ua_id, ua_username, ua_password, ua_image) VALUES
-(1, 'an.nguyen', 'pass123', NULL),
-(2, 'binh.tran', 'pass123', NULL),
-(3, 'chau.le', 'pass123', NULL),
-(4, 'duc.pham', 'pass123', NULL),
-(5, 'giang.hoang', 'pass123', NULL),
-(6, 'hai.vo', 'gvpass', NULL),
-(7, 'lan.dang', 'gvpass', NULL),
-(8, 'minh.bui', 'gvpass', NULL),
-(9, 'nga.ngo', 'adminpass', NULL),
-(10, 'phong.trinh', 'adminpass', NULL),
-(11, 'quyen.ly', 'gvpass', NULL),
-(12, 'sang.mai', 'gvpass', NULL),
-(13, 'thuy.do', 'adminpass', NULL),
-(14, 'tuan.phan', 'adminpass', NULL),
-(15, 'van.vu', 'adminpass', NULL);
+(1, 'an.nguyen', SHA2('pass123', 256), NULL),
+(2, 'binh.tran', SHA2('pass123', 256), NULL),
+(3, 'chau.le', SHA2('pass123', 256), NULL),
+(4, 'duc.pham', SHA2('pass123', 256), NULL),
+(5, 'giang.hoang', SHA2('pass123', 256), NULL),
+(6, 'hai.vo', SHA2('gvpass', 256), NULL),
+(7, 'lan.dang', SHA2('gvpass', 256), NULL),
+(8, 'minh.bui', SHA2('gvpass', 256), NULL),
+(9, 'nga.ngo', SHA2('adminpass', 256), NULL),
+(10, 'phong.trinh', SHA2('adminpass', 256), NULL),
+(11, 'quyen.ly', SHA2('gvpass', 256), NULL),
+(12, 'sang.mai', SHA2('gvpass', 256), NULL),
+(13, 'thuy.do', SHA2('adminpass', 256), NULL),
+(14, 'tuan.phan', SHA2('adminpass', 256), NULL),
+(15, 'van.vu', SHA2('adminpass', 256), NULL);
 
 -- Class (đảm bảo status_id tương ứng với 'Open' hoặc 'Ongoing' để Test được tạo)
 INSERT INTO Class (class_name, class_code, subject_id, semester_id, status_id, lecturer_id, max_students) VALUES 
