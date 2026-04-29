@@ -245,7 +245,7 @@ def student_dashboard():
         user_info = cursor.fetchone()
         
         try:
-            cursor.execute("SELECT fn_CalculateSemesterGPA(%s, %s) AS gpa", (user_id, 1))
+            cursor.execute("SELECT fn_MaxScore_Student_Test(%s, %s) AS gpa", (user_id, 1))
             gpa_result = cursor.fetchone()
             if gpa_result and gpa_result["gpa"] is not None:
                 gpa = gpa_result["gpa"]
