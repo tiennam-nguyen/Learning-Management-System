@@ -54,7 +54,7 @@ BEGIN
     CLOSE cur_attempts;
     
     RETURN v_max_score;
-END 
+END //
 
 DELIMITER ;
 
