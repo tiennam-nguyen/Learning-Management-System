@@ -148,6 +148,79 @@ def lecturer_dashboard():
                            active_classes_count=active_classes_count,
                            courses=courses)
 
+@app.route('/lecturer/stats', methods=['GET', 'POST'])
+def lecturer_stats():
+    if 'user_id' not in session or session.get('role') not in ['Lecturer', 'Admin']:
+        return redirect(url_for('login'))
+
+    students_data = []
+    stats_data = []
+    classes_data = []
+    error_msg = None
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        if session.get('role') == 'Lecturer': # Chỉ lấy lớp của lecturer hiện tại
+            cursor.execute("""
+                SELECT class_id, class_name
+                FROM Class
+                WHERE lecturer_id = %s
+            """, (session['user_id'],))
+        else:
+            # Admin → xem tất cả lớp
+            cursor.execute("""
+                SELECT class_id, class_name
+                FROM Class
+            """)
+        classes_data = cursor.fetchall()
+
+        if request.method == 'POST':
+            action = request.form.get('action')
+
+            # --- XỬ LÝ 3.2 ---
+            if action == 'search_students':
+                keyword = request.form.get('keyword', '')
+                cursor.callproc('sp_GetStudentsByClass', [keyword])
+                for result in cursor.stored_results():
+                    students_data = result.fetchall()
+
+            # --- XỬ LÝ 3.3 ---
+            elif action == 'view_stats':
+                class_id = request.form.get('class_id')
+
+                try:
+                    min_score = float(request.form.get('min_score', 0))
+
+                    # Validate Backend: Kiểm tra điểm sàn
+                    if min_score < 0 or min_score > 10:
+                        error_msg = "❌ Lỗi: Điểm sàn không hợp lệ (Phải từ 0 đến 10)."
+                    # Validate Backend: Kiểm tra ID lớp có tồn tại không
+                    elif not any(str(c['class_id']) == str(class_id) for c in classes_data):
+                        error_msg = "❌ Lỗi: Lớp học này không tồn tại trong hệ thống."
+                    else:
+                        cursor.callproc('sp_GetStudentTestStatsByClass', [class_id, min_score])
+                        for result in cursor.stored_results():
+                            stats_data = result.fetchall()
+
+                except ValueError:
+                    error_msg = "❌ Lỗi: Điểm sàn phải là một con số."
+
+        cursor.close()
+        conn.close()
+
+    except Exception as e:
+        error_msg = f"❌ Lỗi hệ thống: {str(e)}"
+
+    return render_template(
+        'lecturer_stats.html',
+        students_data=students_data,
+        stats_data=stats_data,
+        classes_data=classes_data,
+        error_msg=error_msg
+    )
+
 @app.route('/student/dashboard')
 def student_dashboard():
     if 'user_id' not in session or session.get('role') != 'Student':
@@ -603,10 +676,6 @@ def delete_user():
             conn.close()
 
     return redirect(url_for("user_management"))
-
-@app.route('/index')
-def landing_page():
-    return render_template('index.html')
 
 @app.route('/class/<int:class_id>/discussion')
 def discussion_list(class_id):
