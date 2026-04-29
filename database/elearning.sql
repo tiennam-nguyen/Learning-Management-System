@@ -28,7 +28,6 @@ CREATE TABLE Faculty (
     faculty_name VARCHAR(100) NOT NULL UNIQUE
 );
 
--- Thêm cột credit (số tín chỉ)
 CREATE TABLE Subject (
     subject_id INT AUTO_INCREMENT PRIMARY KEY,
     subject_name VARCHAR(100) NOT NULL,
@@ -59,7 +58,6 @@ CREATE TABLE Student (
     FOREIGN KEY (id) REFERENCES User(id) ON DELETE CASCADE
 );
 
--- Thêm cột degree (trình độ)
 CREATE TABLE Lecturer (
     id INT PRIMARY KEY,
     l_msgv VARCHAR(20) UNIQUE NOT NULL,
@@ -88,20 +86,20 @@ CREATE TABLE User_acc (
 CREATE TABLE Class (
     class_id INT AUTO_INCREMENT PRIMARY KEY,
     class_name VARCHAR(100) NOT NULL,
-    class_code VARCHAR(20) NOT NULL, -- them class_code
+    class_code VARCHAR(20) NOT NULL, 
     subject_id INT NOT NULL,
     semester_id INT NOT NULL,
     status_id INT NOT NULL,
-    lecturer_id INT NULL, -- update them NULL
+    lecturer_id INT NULL,
     max_students INT DEFAULT 40,
     
     FOREIGN KEY (subject_id) REFERENCES Subject(subject_id),
     FOREIGN KEY (semester_id) REFERENCES Semester(semester_id),
     FOREIGN KEY (status_id) REFERENCES Status(status_id),
     FOREIGN KEY (lecturer_id) REFERENCES Lecturer(id) ON DELETE SET NULL, -- set NULL neu xoa gv ra khoi lop hoc
-    -- Dam bao khong trung ma lop trong cung mot mon o hoc ky cu the
+
     CONSTRAINT unique_class_per_semester UNIQUE (class_code, subject_id, semester_id),
-    CONSTRAINT chk_max_students_pos CHECK (max_students > 0) -- Dam bao si so luon duong
+    CONSTRAINT chk_max_students_pos CHECK (max_students > 0) 
 );
 
 CREATE TABLE Enrollment (
@@ -119,7 +117,7 @@ CREATE TABLE Chapter (
     class_id INT,
     chapter_id INT,
     chapter_name VARCHAR(255) NOT NULL,
-    description TEXT, -- add description
+    description TEXT,
     PRIMARY KEY (class_id, chapter_id),
     FOREIGN KEY (class_id) REFERENCES Class(class_id) ON DELETE CASCADE
 );
@@ -134,7 +132,6 @@ CREATE TABLE Topic (
     FOREIGN KEY (class_id, chapter_id) REFERENCES Chapter(class_id, chapter_id) ON DELETE CASCADE
 );
 
--- Thêm cột file_size (MB) và ràng buộc <= 200
 CREATE TABLE File (
     class_id INT,
     chapter_id INT,
@@ -142,11 +139,11 @@ CREATE TABLE File (
     file_id INT,
     file_name VARCHAR(255) NOT NULL,
     file_path VARCHAR(512) NOT NULL,
-    file_size DECIMAL(10, 2) NOT NULL COMMENT 'Kích thước file (MB)', -- change INT to DECIMAL 2
+    file_size DECIMAL(10, 2) NOT NULL COMMENT 'Kích thước file (MB)',
     update_date DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (class_id, chapter_id, topic_id, file_id),
     FOREIGN KEY (class_id, chapter_id, topic_id) REFERENCES Topic(class_id, chapter_id, topic_id) ON DELETE CASCADE,
-    CONSTRAINT chk_file_size CHECK (file_size > 0 AND file_size <= 200) -- add file_size > 0
+    CONSTRAINT chk_file_size CHECK (file_size > 0 AND file_size <= 200)
 );
 
 -- ------------------------------------------------------------
@@ -181,7 +178,7 @@ CREATE TABLE File_submission (
     path VARCHAR(512),
     FOREIGN KEY (test_id) REFERENCES Test(test_id) ON DELETE CASCADE,
     
-    CONSTRAINT chk_fSize CHECK (file_size > 0 AND file_size <= 200) -- add check
+    CONSTRAINT chk_fSize CHECK (file_size > 0 AND file_size <= 200)
 );
 
 -- ------------------------------------------------------------
