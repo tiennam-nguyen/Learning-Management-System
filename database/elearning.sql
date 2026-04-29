@@ -145,7 +145,7 @@ CREATE TABLE File (
     FOREIGN KEY (class_id, chapter_id, topic_id) REFERENCES Topic(class_id, chapter_id, topic_id) ON DELETE CASCADE,
     CONSTRAINT chk_file_size CHECK (file_size > 0 AND file_size <= 200)
 );
-
+ALTER TABLE Topic ADD COLUMN allowed_extensions VARCHAR(100) DEFAULT 'pdf,docx,pptx';
 -- ------------------------------------------------------------
 -- 5. BÀI KIỂM TRA
 -- ------------------------------------------------------------
