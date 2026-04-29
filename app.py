@@ -1,7 +1,11 @@
-from flask import Flask, render_template, request, session, redirect, url_for, flash
+from flask import Flask, render_template, request, session, redirect, url_for, flash, make_response
+import uuid
 import mysql.connector
 from dotenv import load_dotenv
 import os
+
+from mysql.connector import cursor
+
 
 def get_db_connection():
     return mysql.connector.connect(
@@ -23,20 +27,41 @@ def login():
     if request.method == 'POST':
         username = request.form.get('username')
         password = request.form.get('password')
-        
+
+        device_id = request.cookies.get('device_id')
+        #Neu thiet bi la -> tao id moi
+        if not device_id:
+            device_id = str(uuid.uuid4())
+
         try:
             conn = get_db_connection()
             cursor = conn.cursor(dictionary=True)
-            
+
             # Fetch user from db
             cursor.execute("SELECT ua_id, ua_username FROM User_acc WHERE ua_username = %s AND ua_password = SHA2(%s, 256)", (username, password))
             user = cursor.fetchone()
             
             if user:
                 user_id = user['ua_id']
+
+                try:
+                    cursor.execute("SELECT 1 FROM User_Session WHERE user_id = %s AND device_id = %s", (user_id, device_id))
+                    session_exists = cursor.fetchone()
+
+                    if not session_exists:
+                        cursor.execute("INSERT INTO User_Session (user_id, device_id) VALUES (%s, %s)", (user_id, device_id))
+                        conn.commit()
+                except mysql.connector.Error as err:
+                    if err.sqlstate == '45000':
+                        flash('Tài khoản đã đăng nhập trên 3 thiết bị. Vui lòng đăng xuất ở thiết bị khác!', 'danger')
+                        return render_template('login.html')
+                    else:
+                        raise err
+
                 session['user_id'] = user_id
                 session['username'] = user['ua_username']
-                
+                session['device_id'] = device_id
+
                 # Determine role based on database tables
                 role = None
                 cursor.execute("SELECT id FROM Admin WHERE id = %s", (user_id,))
@@ -56,11 +81,14 @@ def login():
                     flash(f'Successfully logged in as {username} ({role})!', 'success')
                     
                     if role == 'Admin':
-                        return redirect(url_for('user_management'))
+                        response = make_response(redirect(url_for('user_management')))
                     elif role == 'Lecturer':
-                        return redirect(url_for('lecturer_dashboard'))
+                        response = make_response(redirect(url_for('lecturer_dashboard')))
                     else:
-                        return redirect(url_for('student_dashboard'))
+                        response = make_response(redirect(url_for('student_dashboard')))
+
+                    response.set_cookie('device_id', device_id, max_age=31536000, httponly=True)
+                    return response
                 else:
                     flash('User role could not be determined.', 'danger')
             else:
@@ -75,6 +103,22 @@ def login():
 
 @app.route('/logout')
 def logout():
+    user_id = session.get('user_id')
+    device_id = session.get('device_id')
+    if user_id and device_id:
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+
+            query = "DELETE FROM User_Session WHERE user_id = %s AND device_id = %s"
+            cursor.execute(query, (user_id, device_id))
+            conn.commit()
+        except mysql.connector.Error as err:
+            print(f"Lỗi khi xóa session: {err}")
+        finally:
+            if 'cursor' in locals(): cursor.close()
+            if 'conn' in locals() and conn.is_connected(): conn.close()
+
     session.clear()
     flash('Logged out successfully.', 'info')
     return redirect(url_for('login'))
