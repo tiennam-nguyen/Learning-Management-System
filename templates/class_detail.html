@@ -6,12 +6,21 @@
 <div class="row mt-4">
     <div class="col-12">
         <div class="d-flex justify-content-between align-items-center mb-4">
-            <div>
-                <h2 class="fw-bold">{{ class_info.class_name }}</h2>
-                <p class="text-muted mb-0">{{ class_info.subject_name }} &middot; Semester {{ class_info.semester_id }}</p>
-            </div>
-            <a href="{{ url_for('discussion_list', class_id=class_info.class_id) }}" class="btn btn-outline-primary">View Discussion</a>
-        </div>
+    <div>
+        <h2 class="fw-bold">{{ class_info.class_name }}</h2>
+        <p class="text-muted mb-0">{{ class_info.subject_name }} &middot; Semester {{ class_info.semester_id }}</p>
+    </div>
+    
+    <div class="d-flex gap-2">
+        <a href="{{ url_for('discussion_list', class_id=class_info.class_id) }}" class="btn btn-outline-primary">View Discussion</a>
+        
+        {% if session.get('role') == 'Lecturer' %}
+            <button type="button" class="btn btn-success shadow-sm" data-bs-toggle="modal" data-bs-target="#createTestModal">
+                + Create Test
+            </button>
+        {% endif %}
+    </div>
+</div>
     </div>
 </div>
 
@@ -44,6 +53,52 @@
             </div>
         </div>
     </div>
+
+    <div class="row mt-4">
+    <div class="col-12">
+        <div class="card shadow-sm border-0 rounded-3">
+            <div class="card-header bg-white pt-4 pb-3 border-bottom border-light">
+                <h5 class="fw-bold text-dark m-0">Tests & Examinations</h5>
+            </div>
+            <div class="card-body p-0">
+                {% if tests %}
+                    <div class="table-responsive">
+                        <table class="table mb-0 align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Test ID</th>
+                                    <th>Test Name</th>
+                                    <th>Start Time</th>
+                                    <th>End Time</th>
+                                    <th>Duration</th>
+                                    <th class="text-center">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for t in tests %}
+                                    <tr>
+                                        <td><span class="badge bg-light text-dark">#{{ t.test_id }}</span></td>
+                                        <td class="fw-bold text-primary">{{ t.test_name }}</td>
+                                        <td>{{ t.test_start }}</td>
+                                        <td>{{ t.test_end }}</td>
+                                        <td>{{ t.test_timer }} mins</td>
+                                        <td class="text-center">
+                                            <a href="#" class="btn btn-sm btn-outline-secondary">View Result</a>
+                                        </td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="p-4 text-center text-muted fst-italic">
+                        Chưa có bài kiểm tra nào được tạo cho lớp học này.
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
 
     <div class="col-lg-4">
         <div class="card shadow-sm border-0 rounded-3 bg-primary text-white h-100">
@@ -92,4 +147,70 @@
         </div>
     </div>
 </div>
+
+{% if session.get('role') == 'Lecturer' %}
+<div class="modal fade" id="createTestModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <form action="{{ url_for('create_test', class_id=class_info.class_id) }}" method="POST" class="modal-content border-0 shadow">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title fw-bold">Thiết lập bài kiểm tra mới</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-4">
+                <div class="row g-3">
+                    <div class="col-12">
+                        <label class="form-label fw-semibold">Tên bài kiểm tra *</label>
+                        <input type="text" class="form-control bg-light" name="test_name" placeholder="Ví dụ: Kiểm tra định kỳ" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label fw-semibold">Thời gian bắt đầu *</label>
+                        <input type="datetime-local" class="form-control bg-light" name="test_start" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label fw-semibold">Thời gian kết thúc *</label>
+                        <input type="datetime-local" class="form-control bg-light" name="test_end" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label fw-semibold">Thời lượng (phút) *</label>
+                        <input type="number" class="form-control bg-light" name="test_timer" min="1" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label fw-semibold">ID Chương</label>
+                        <input type="number" class="form-control bg-light" name="chapter_id" placeholder="Tùy chọn">
+                    </div>
+                    
+                    <div class="col-12 mt-4">
+                        <div class="alert alert-info border-info border-start border-4 mb-3">
+                            <h6 class="fw-bold mb-1">Ràng buộc 4: Ngân hàng câu hỏi</h6>
+                            <small>Chọn ít nhất 1 câu hỏi bên dưới để khởi tạo bài thi.</small>
+                        </div>
+                        
+                        <div style="max-height: 300px; overflow-y: auto;" class="border rounded p-3 bg-white">
+                            {% if questions %}
+                                {% for q in questions %}
+                                <div class="form-check mb-2 pb-2 border-bottom">
+                                    <input class="form-check-input border-secondary" type="checkbox" name="question_ids" value="{{ q.question_id }}" id="q{{ q.question_id }}">
+                                    <label class="form-check-label d-block" for="q{{ q.question_id }}">
+                                        <span class="badge bg-light text-dark border">#{{ q.question_id }}</span> 
+                                        <strong>{{ q.question_type }}:</strong> {{ q.question_content }} 
+                                        <span class="badge bg-secondary float-end">{{ q.max_score }} đ</span>
+                                    </label>
+                                </div>
+                                {% endfor %}
+                            {% else %}
+                                <div class="text-center p-3 text-muted">Không tìm thấy câu hỏi nào trong database.</div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer bg-light">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Hủy</button>
+                <button type="submit" class="btn btn-success fw-bold px-4">Lưu bài thi</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endif %}
+
 {% endblock %}
