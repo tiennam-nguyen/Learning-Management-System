@@ -822,22 +822,22 @@ INSERT INTO Comment (comment_content, post_id, ua_id, parent_comment_id) VALUES
 ('Dạ em cảm ơn thầy nhiều!', 1, 1, 6);                 -- Trả lời cho ID 6 (An trả lời lại thầy)
 
 -- An (ID 1) đăng nhập trên 2 thiết bị
-INSERT INTO User_Session (user_id, device_id) VALUES (1, 'LAPTOP-DELL-AN-01');
-INSERT INTO User_Session (user_id, device_id) VALUES (1, 'IPHONE-13-AN-02');
+-- INSERT INTO User_Session (user_id, device_id) VALUES (1, 'LAPTOP-DELL-AN-01');
+-- INSERT INTO User_Session (user_id, device_id) VALUES (1, 'IPHONE-13-AN-02');
 
 -- Binh (ID 2) đăng nhập trên 1 thiết bị
-INSERT INTO User_Session (user_id, device_id) VALUES (2, 'MACBOOK-BINH-01');
+-- INSERT INTO User_Session (user_id, device_id) VALUES (2, 'MACBOOK-BINH-01');
 
 -- Chau (ID 3) đăng nhập trên 1 thiết bị
-INSERT INTO User_Session (user_id, device_id) VALUES (3, 'ANDROID-CHAU-01');
+-- INSERT INTO User_Session (user_id, device_id) VALUES (3, 'ANDROID-CHAU-01');
 
 -- Giang (ID 5) đăng nhập trên 2 thiết bị
-INSERT INTO User_Session (user_id, device_id) VALUES (5, 'IPAD-GIANG-01');
-INSERT INTO User_Session (user_id, device_id) VALUES (5, 'PC-GIANG-02');
+-- INSERT INTO User_Session (user_id, device_id) VALUES (5, 'IPAD-GIANG-01');
+-- INSERT INTO User_Session (user_id, device_id) VALUES (5, 'PC-GIANG-02');
 -- Duc (ID 4) sử dụng hết 3 slot đăng nhập cho phép
-INSERT INTO User_Session (user_id, device_id) VALUES (4, 'DUC-PC-GAMING');
-INSERT INTO User_Session (user_id, device_id) VALUES (4, 'DUC-LAPTOP-OFFICE');
-INSERT INTO User_Session (user_id, device_id) VALUES (4, 'DUC-PHONE-SAMSUNG');
+-- INSERT INTO User_Session (user_id, device_id) VALUES (4, 'DUC-PC-GAMING');
+-- INSERT INTO User_Session (user_id, device_id) VALUES (4, 'DUC-LAPTOP-OFFICE');
+-- INSERT INTO User_Session (user_id, device_id) VALUES (4, 'DUC-PHONE-SAMSUNG');
 -- CỐ GẮNG chèn thiết bị thứ 4 cho Duc (ID 4)
 -- Kết quả kỳ vọng: MySQL báo lỗi 'Lỗi: Tài khoản đã đăng nhập trên 3 thiết bị...'
 -- INSERT INTO User_Session (user_id, device_id) VALUES (4, 'DUC-TABLET-UNKNOWN');
