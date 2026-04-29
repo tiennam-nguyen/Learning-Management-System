@@ -428,21 +428,19 @@ def class_detail(class_id):
 
     class_info = None
     students = []
+    questions = []
+    tests = [] # Khởi tạo danh sách bài test rỗng
 
     try:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
 
+        # 1. Lấy thông tin chung của lớp
         cursor.execute(
             """
             SELECT
-                c.class_id,
-                c.class_name,
-                sub.subject_name,
-                sub.credit,
-                sem.semester_id,
-                sem.semester_start,
-                sem.semester_end,
+                c.class_id, c.class_name, sub.subject_name, sub.credit,
+                sem.semester_id, sem.semester_start, sem.semester_end,
                 st.status_display,
                 CONCAT_WS(' ', lu.lastName, lu.middleName, lu.firstName) AS lecturer_name
             FROM Class c
@@ -453,7 +451,7 @@ def class_detail(class_id):
             LEFT JOIN User lu ON lu.id = l.id
             WHERE c.class_id = %s
             """,
-            (class_id,),
+            (class_id,)
         )
         class_info = cursor.fetchone()
 
@@ -461,24 +459,31 @@ def class_detail(class_id):
             flash('Class not found.', 'warning')
             return redirect(url_for('dashboard'))
 
+        # 2. Lấy danh sách sinh viên
         cursor.execute(
             """
-            SELECT
-                u.id,
-                u.firstName,
-                u.middleName,
-                u.lastName,
-                u.email,
-                s.s_mssv
+            SELECT u.id, u.firstName, u.middleName, u.lastName, u.email, s.s_mssv
             FROM Enrollment e
             JOIN User u ON u.id = e.student_id
             LEFT JOIN Student s ON s.id = u.id
             WHERE e.class_id = %s
             ORDER BY u.lastName, u.firstName
             """,
-            (class_id,),
+            (class_id,)
         )
         students = cursor.fetchall()
+
+        # 3. Lấy Ngân hàng câu hỏi (Chỉ dành cho Giảng viên)
+        if session.get('role') == 'Lecturer':
+            cursor.execute("SELECT question_id, question_type, question_content, max_score FROM Question")
+            questions = cursor.fetchall()
+
+        # 4. LẤY DANH SÁCH BÀI TEST CHỖ NÀY NÈ!
+        cursor.execute(
+            "SELECT test_id, test_name, test_start, test_end, test_timer FROM Test WHERE class_id = %s ORDER BY test_start DESC",
+            (class_id,)
+        )
+        tests = cursor.fetchall()
 
     except mysql.connector.Error as e:
         flash(f"Database error: {e}", "danger")
@@ -488,7 +493,8 @@ def class_detail(class_id):
         if 'conn' in locals() and conn and conn.is_connected():
             conn.close()
 
-    return render_template('class_detail.html', class_info=class_info, students=students)
+    # TRUYỀN BIẾN tests VÀO ĐÂY LÀ LÊN HÌNH NGAY!
+    return render_template('class_detail.html', class_info=class_info, students=students, questions=questions, tests=tests)
 
 @app.route('/admin/users/create', methods=['POST'])
 def create_user():
@@ -807,6 +813,7 @@ def discussion_post_detail(post_id):
             (post_id,),
         )
         comments = cursor.fetchall()
+
     except mysql.connector.Error as e:
         flash(f"Database error: {e}", "danger")
     finally:
@@ -834,12 +841,35 @@ def discussion_add_comment(post_id):
         flash('Comment content cannot be empty.', 'danger')
         return redirect(url_for('discussion_post_detail', post_id=post_id))
 
+    user_id = session['user_id']
+    role = session.get('role')
+
     try:
         conn = get_db_connection()
-        cursor = conn.cursor()
+        cursor = conn.cursor(dictionary=True)
+
+        # --- XỬ LÝ RÀNG BUỘC 3: KIỂM TRA QUYỀN BÌNH LUẬN ---
+        if role == 'Student':
+            cursor.execute("""
+                SELECT e.is_allowed_to_discuss 
+                FROM Enrollment e 
+                JOIN Post p ON p.class_id = e.class_id 
+                WHERE p.post_id = %s AND e.student_id = %s
+            """, (post_id, user_id))
+            enrollment = cursor.fetchone()
+            
+            if not enrollment:
+                flash('Bạn không thuộc lớp học này nên không thể bình luận!', 'danger')
+                return redirect(url_for('dashboard'))
+                
+            if not enrollment['is_allowed_to_discuss']:
+                flash('Bạn đã bị giảng viên khóa quyền bình luận trong lớp này!', 'danger')
+                return redirect(url_for('discussion_post_detail', post_id=post_id))
+        # --------------------------------------------------
+
         cursor.execute(
             "INSERT INTO Comment (comment_content, post_id, ua_id) VALUES (%s, %s, %s)",
-            (content, post_id, session['user_id']),
+            (content, post_id, user_id),
         )
         conn.commit()
         flash('Comment posted successfully.', 'success')
@@ -854,6 +884,63 @@ def discussion_add_comment(post_id):
             conn.close()
 
     return redirect(url_for('discussion_post_detail', post_id=post_id))
+
+@app.route('/class/<int:class_id>/test/create', methods=['POST'])
+def create_test(class_id):
+    if 'user_id' not in session or session.get('role') != 'Lecturer':
+        flash('Chỉ giảng viên mới có quyền tạo bài kiểm tra.', 'danger')
+        return redirect(url_for('dashboard'))
+    
+    test_name = request.form.get('test_name')
+    test_start = request.form.get('test_start')
+    test_end = request.form.get('test_end')
+    test_timer = request.form.get('test_timer')
+    chapter_id = request.form.get('chapter_id') or None
+    
+    question_ids = request.form.getlist('question_ids') 
+    
+    if not question_ids:
+        flash('Một bài kiểm tra phải có ít nhất một câu hỏi!', 'danger')
+        return redirect(url_for('class_detail', class_id=class_id))
+        
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        cursor.execute("SELECT lecturer_id FROM Class WHERE class_id = %s", (class_id,))
+        class_info = cursor.fetchone()
+        
+        if not class_info or class_info['lecturer_id'] != session['user_id']:
+            flash('Bạn không có quyền quản lý hay tạo bài thi cho lớp học này!', 'danger')
+            return redirect(url_for('dashboard'))
+            
+        # KHÔNG GỌI conn.start_transaction() NỮA VÌ NÓ ĐÃ TỰ START KHI CHẠY CÂU SELECT Ở TRÊN!
+        
+        cursor.execute("""
+            INSERT INTO Test (test_name, test_start, test_end, test_timer, class_id, chapter_id) 
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """, (test_name, test_start, test_end, test_timer, class_id, chapter_id))
+        
+        new_test_id = cursor.lastrowid
+        
+        for q_id in question_ids:
+            cursor.execute("""
+                INSERT INTO Test_Question (test_id, question_id) 
+                VALUES (%s, %s)
+            """, (new_test_id, q_id))
+            
+        conn.commit()
+        flash('Tạo bài kiểm tra thành công!', 'success')
+        
+    except mysql.connector.Error as e:
+        if conn and conn.is_connected():
+            conn.rollback()
+        flash(f"Lỗi cơ sở dữ liệu: {e}", 'danger')
+    finally:
+        if 'cursor' in locals() and cursor: cursor.close()
+        if 'conn' in locals() and conn.is_connected(): conn.close()
+        
+    return redirect(url_for('class_detail', class_id=class_id))
 
 if __name__ == '__main__':
     app.run(debug=True)
