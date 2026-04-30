@@ -1,9 +1,9 @@
 USE elearning;
 
 -- Tính điểm trung bình và xếp loại sinh viên trong 1 lớp
-DELIMITER $$
+DELIMITER //
 
-DROP FUNCTION IF EXISTS fn_GetStudentGradeInClass $$
+DROP FUNCTION IF EXISTS fn_GetStudentGradeInClass //
 
 CREATE FUNCTION fn_GetStudentGradeInClass(p_student_id INT, p_class_id INT)
 RETURNS VARCHAR(100)
@@ -57,14 +57,11 @@ BEGIN
 
     -- Trả về chuỗi định dạng: "Điểm (Xếp loại)"
     RETURN CONCAT(FORMAT(v_avg, 2), ' [', v_rank, ']');
-END $$
-
-DELIMITER ;
+END //
 
 -- Dem tong so file trong Lop hoc
 
-DELIMITER $$
-DROP FUNCTION IF EXISTS fn_FileStatus $$
+DROP FUNCTION IF EXISTS fn_FileStatus //
 CREATE FUNCTION fn_FileStatus(p_class_id INT)
 RETURNS VARCHAR(100)
 DETERMINISTIC
@@ -105,26 +102,5 @@ BEGIN
     IF v_total_file = 0 THEN RETURN 'Lop hoc chua co tai lieu';
     ELSE RETURN CONCAT('Lop hoc co ', v_total_file, ' tai lieu');
     END IF;
-END $$
+END //
 DELIMITER ;
-
-
--- @Test trả về điểm trung bình và xếp loại sinh viên trong lớp 1
-SELECT 
-    u.id AS User_ID,
-    CONCAT(u.lastName, ' ', u.firstName) AS Full_Name,
-    s.s_mssv AS MSSV,
-    fn_GetStudentGradeInClass(u.id, 1) AS Academic_Rank
-FROM User u
-JOIN Student s ON u.id = s.id
-JOIN Enrollment e ON s.id = e.student_id
-WHERE e.class_id = 1;
-
--- @Test trang thai tai lieu 
-SELECT 
-    c.class_id AS Class_ID,
-    c.class_name AS Class_name,
-    s.subject_name AS Subject_name,
-    fn_FileStatus(c.class_id) AS Trang_Thai_Tai_Lieu
-FROM Class c
-JOIN Subject s ON c.subject_id = s.subject_id;
