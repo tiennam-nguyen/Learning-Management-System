@@ -1,4 +1,4 @@
-
+USE elearning;
 DELIMITER //
 
 -- =====================================================================================
@@ -28,7 +28,8 @@ CREATE PROCEDURE sp_CreateUser(
 )
 BEGIN
     DECLARE v_error_msg VARCHAR(512);
-
+	DECLARE v_userName VARCHAR(50);
+    
     -- [EXCEPTION HANDLER]: Trùng lặp dữ liệu UNIQUE
     DECLARE EXIT HANDLER FOR 1062
     BEGIN
@@ -54,8 +55,10 @@ BEGIN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Lỗi: Email và Mã số định danh không được để trống!';
     END IF;
 
+	SET v_userName = SUBSTRING_INDEX(TRIM(p_email), '@', 1);
+    
     START TRANSACTION;
-
+	
     -- [BƯỚC 1]: Lưu bảng User
     INSERT INTO User (firstName, middleName, lastName, sex, email, birthday, nationality)
     VALUES (TRIM(p_firstName), TRIM(p_middleName), TRIM(p_lastName), p_sex, TRIM(p_email), p_birthday, TRIM(p_nationality));
@@ -73,7 +76,7 @@ BEGIN
 
     -- [BƯỚC 3]: Tạo tài khoản
     INSERT INTO User_acc (ua_id, ua_username, ua_password)
-    VALUES (p_new_user_id, TRIM(p_user_code), SHA2(TRIM(p_user_code), 256));
+    VALUES (p_new_user_id, TRIM(v_userName), SHA2(TRIM(p_user_code), 256));
 
     COMMIT;
 END//

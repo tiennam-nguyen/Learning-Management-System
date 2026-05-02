@@ -1,0 +1,111 @@
+{% extends 'base.html' %}
+
+{% block title %}Thêm bài học mới{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="{{ url_for('class_detail', class_id=class_id) }}">Quay lại lớp học</a></li>
+            <li class="breadcrumb-item active">Thêm bài học</li>
+        </ol>
+    </nav>
+
+    <div class="card shadow-sm border-0 rounded-3">
+        <div class="card-header bg-white py-3 border-bottom border-light">
+            <h5 class="fw-bold mb-0 text-primary">
+                <i class="bi bi-plus-square-fill me-2"></i>Thêm bài học mới cho Chương {{ chapter_id }}
+            </h5>
+        </div>
+        <div class="card-body p-4">
+            <!-- QUAN TRỌNG: Phải có enctype="multipart/form-data" để gửi file -->
+            <form action="{{ url_for('add_topic', class_id=class_id, chapter_id=chapter_id) }}"
+                  method="POST"
+                  enctype="multipart/form-data">
+
+                <!-- Tên bài học -->
+                <div class="mb-4">
+                    <label class="form-label fw-bold">Tên bài học (Topic Name) *</label>
+                    <input type="text" name="topic_name" class="form-control form-control-lg bg-light"
+                           placeholder="Ví dụ: Giới thiệu về HTML" required>
+                </div>
+
+                <!-- Cấu hình File đính kèm -->
+                <div class="card bg-light border-0 mb-4">
+                    <div class="card-body">
+                        <h6 class="fw-bold mb-3"><i class="bi bi-paperclip me-2"></i>Tài liệu đính kèm</h6>
+
+                        <!-- Chọn định dạng cho phép -->
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold text-muted text-uppercase">Định dạng cho phép:</label>
+                            <div class="d-flex flex-wrap gap-3 p-2 bg-white rounded border">
+                                {% for ext in ['pdf', 'docx', 'pptx', 'zip', 'jpg', 'png', 'txt'] %}
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="checkbox" name="allowed_exts"
+                                           value="{{ ext }}" id="ext_{{ ext }}" checked>
+                                    <label class="form-check-label small" for="ext_{{ ext }}">{{ ext|upper }}</label>
+                                </div>
+                                {% endfor %}
+                            </div>
+                            <div class="form-text">Giảng viên có thể giới hạn loại file sinh viên được thấy/tải.</div>
+                        </div>
+
+                        <!-- Ô chọn file -->
+                        <div class="mb-0">
+                            <label class="form-label small fw-bold text-muted text-uppercase">Chọn tệp tin:</label>
+                            <input type="file" name="file" class="form-control" id="fileInput">
+                            <div class="form-text text-danger">Dung lượng tối đa: 200MB.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Nội dung tóm tắt -->
+                <div class="mb-4">
+                    <label class="form-label fw-bold">Nội dung tóm tắt</label>
+                    <textarea name="description" class="form-control bg-light" rows="4"
+                              placeholder="Nhập mô tả ngắn về mục tiêu hoặc nội dung bài học..."></textarea>
+                </div>
+
+                <!-- Nút điều hướng -->
+                <div class="d-flex justify-content-between align-items-center border-top pt-4">
+                    <a href="{{ url_for('class_detail', class_id=class_id) }}" class="btn btn-outline-secondary px-4">
+                        <i class="bi bi-arrow-left me-1"></i> Hủy bỏ
+                    </a>
+                    <button type="submit" class="btn btn-primary btn-lg px-5 shadow-sm">
+                        Lưu bài học <i class="bi bi-check-circle ms-1"></i>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Logic tự động lọc định dạng file trong cửa sổ chọn file của máy tính
+    const checkboxes = document.querySelectorAll('input[name="allowed_exts"]');
+    const fileInput = document.getElementById('fileInput');
+
+    function updateAcceptAttribute() {
+        const selected = Array.from(checkboxes)
+            .filter(i => i.checked)
+            .map(i => '.' + i.value);
+        fileInput.accept = selected.join(',');
+    }
+
+    checkboxes.forEach(cb => cb.addEventListener('change', updateAcceptAttribute));
+
+    // Chạy lần đầu khi load trang
+    updateAcceptAttribute();
+</script>
+
+<style>
+    .form-control:focus {
+        border-color: #0d6efd;
+        box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.1);
+    }
+    .form-check-input:checked {
+        background-color: #198754;
+        border-color: #198754;
+    }
+</style>
+{% endblock %}

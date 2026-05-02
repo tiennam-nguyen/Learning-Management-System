@@ -35,7 +35,7 @@
                                 <td class="fs-5">{{ user_info.email }}</td>
                             </tr>
                             <tr>
-                                <th scope="row" class="text-muted fw-semibold">Department:</th>
+                                <th scope="row" class="text-muted fw-semibold">Degree:</th>
                                 <td class="fs-5">{{ user_info.department }}</td>
                             </tr>
                         </tbody>
@@ -62,9 +62,10 @@
                 
                 <hr class="w-75 my-4 border-white opacity-25">
                 
-                <button class="btn btn-light text-success fw-bold rounded-pill px-4 py-2 mt-2 shadow-sm transition-all hover-scale">
-                    View Schedule
-                </button>
+                <a href="{{ url_for('lecturer_stats') }}" 
+                    class="btn btn-light text-success fw-bold rounded-pill px-4 py-2 mt-2 shadow-sm transition-all hover-scale">
+                    View Stats
+                </a>
             </div>
         </div>
     </div>
