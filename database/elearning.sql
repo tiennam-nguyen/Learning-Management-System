@@ -59,12 +59,18 @@ CREATE TABLE Student (
     FOREIGN KEY (id) REFERENCES User(id) ON DELETE CASCADE
 );
 
--- Thêm cột degree (trình độ)
 CREATE TABLE Lecturer (
     id INT PRIMARY KEY,
     l_msgv VARCHAR(20) UNIQUE NOT NULL,
-    degree ENUM('Bachelor', 'Master', 'PhD') NOT NULL,
     FOREIGN KEY (id) REFERENCES User(id) ON DELETE CASCADE
+);
+
+-- Thêm bảng mới để lưu thuộc tính đa trị degree của giảng viên
+CREATE TABLE Lecturer_Degree (
+    lecturer_id INT,
+    degree ENUM('Bachelor', 'Master', 'PhD') NOT NULL,
+    PRIMARY KEY (lecturer_id, degree),
+    FOREIGN KEY (lecturer_id) REFERENCES Lecturer(id) ON DELETE CASCADE
 );
 
 CREATE TABLE Admin (
@@ -543,6 +549,124 @@ END//
 
 DELIMITER ;
 
+-- ============================================================
+-- PHẦN BỔ SUNG: CÁC BẢNG VÀ TRIGGER ĐỂ FIX COMMENT CỦA GIẢNG VIÊN
+-- ============================================================
+
+-- 1. Xử lý liên kết ĐỆ QUY (Recursive) cho EERD: Bảng môn học tiên quyết
+CREATE TABLE Subject_Prerequisite (
+    subject_id INT NOT NULL,
+    prereq_id INT NOT NULL,
+    PRIMARY KEY (subject_id, prereq_id),
+    FOREIGN KEY (subject_id) REFERENCES Subject(subject_id) ON DELETE CASCADE,
+    FOREIGN KEY (prereq_id) REFERENCES Subject(subject_id) ON DELETE CASCADE,
+    CONSTRAINT chk_no_self_prereq CHECK (subject_id != prereq_id)
+);
+
+-- 2. Xử lý giới hạn 3 thiết bị đăng nhập: Tạo bảng Session
+CREATE TABLE User_Session (
+    session_id INT AUTO_INCREMENT PRIMARY KEY,
+    ua_id INT NOT NULL,
+    login_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (ua_id) REFERENCES User_acc(ua_id) ON DELETE CASCADE
+);
+
+DELIMITER //
+
+-- Bắt lỗi đăng nhập quá 3 thiết bị
+CREATE TRIGGER trg_limit_3_devices
+BEFORE INSERT ON User_Session
+FOR EACH ROW
+BEGIN
+    DECLARE active_sessions INT;
+    SELECT COUNT(*) INTO active_sessions FROM User_Session WHERE ua_id = NEW.ua_id;
+    IF active_sessions >= 3 THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Tài khoản đang đăng nhập trên 3 thiết bị, vui lòng đăng xuất bớt.';
+    END IF;
+END//
+
+-- 3. Xử lý thiếu Trigger UPDATE trên bảng Test (Ngăn đổi class_id sang lớp đang Closed)
+CREATE TRIGGER trg_check_class_status_for_test_update
+BEFORE UPDATE ON Test
+FOR EACH ROW
+BEGIN
+    DECLARE v_status_name VARCHAR(50);
+    IF NEW.class_id != OLD.class_id THEN
+        SELECT s.status_display INTO v_status_name
+        FROM Class c JOIN Status s ON c.status_id = s.status_id
+        WHERE c.class_id = NEW.class_id;
+        
+        IF v_status_name != 'Open' THEN
+            SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Lớp chuyển đến phải ở trạng thái Open.';
+        END IF;
+    END IF;
+END//
+
+-- 4. Xử lý Ràng buộc: Sinh viên không được hủy lớp nếu làm tổng tín chỉ < 11
+CREATE TRIGGER trg_min_11_credits_delete
+BEFORE DELETE ON Enrollment
+FOR EACH ROW
+BEGIN
+    DECLARE total_credits INT;
+    DECLARE dropping_credit INT;
+    
+    SELECT su.credit INTO dropping_credit
+    FROM Class c JOIN Subject su ON c.subject_id = su.subject_id
+    WHERE c.class_id = OLD.class_id;
+    
+    SELECT COALESCE(SUM(su.credit), 0) INTO total_credits
+    FROM Enrollment e
+    JOIN Class c ON e.class_id = c.class_id
+    JOIN Subject su ON c.subject_id = su.subject_id
+    WHERE e.student_id = OLD.student_id 
+      AND c.semester_id = (SELECT semester_id FROM Class WHERE class_id = OLD.class_id);
+      
+    IF (total_credits - dropping_credit) < 11 AND total_credits >= 11 THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Không thể hủy môn: Tổng số tín chỉ trong học kỳ rớt xuống dưới 11.';
+    END IF;
+END//
+
+-- 5. Xử lý Ràng buộc: Bài kiểm tra phải có ít nhất 1 câu hỏi
+CREATE TRIGGER trg_prevent_delete_last_question
+BEFORE DELETE ON Test_Question
+FOR EACH ROW
+BEGIN
+    DECLARE q_count INT;
+    SELECT COUNT(*) INTO q_count FROM Test_Question WHERE test_id = OLD.test_id;
+    IF q_count <= 1 THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Bài kiểm tra phải có ít nhất 1 câu hỏi, không thể xóa câu cuối cùng.';
+    END IF;
+END//
+
+-- 6. Xử lý Ràng buộc: Câu hỏi phải có ít nhất 1 đáp án đúng
+CREATE TRIGGER trg_prevent_delete_last_correct_choice
+BEFORE DELETE ON Choice
+FOR EACH ROW
+BEGIN
+    DECLARE correct_count INT;
+    IF OLD.is_true = 1 THEN
+        SELECT COUNT(*) INTO correct_count FROM Choice WHERE question_id = OLD.question_id AND is_true = 1;
+        IF correct_count <= 1 THEN
+            SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Câu hỏi trắc nghiệm phải có ít nhất 1 đáp án đúng.';
+        END IF;
+    END IF;
+END//
+
+CREATE TRIGGER trg_prevent_uncheck_last_correct_choice
+BEFORE UPDATE ON Choice
+FOR EACH ROW
+BEGIN
+    DECLARE correct_count INT;
+    IF OLD.is_true = 1 AND NEW.is_true = 0 THEN
+        SELECT COUNT(*) INTO correct_count FROM Choice WHERE question_id = OLD.question_id AND is_true = 1;
+        IF correct_count <= 1 THEN
+            SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Câu hỏi trắc nghiệm phải có ít nhất 1 đáp án đúng.';
+        END IF;
+    END IF;
+END//
+
+DELIMITER ;
+
 -- ------------------------------------------------------------
 -- 10. DỮ LIỆU MẪU (ĐÃ CẬP NHẬT)
 -- ------------------------------------------------------------
@@ -595,12 +719,21 @@ INSERT INTO Student (id, s_mssv) VALUES
 (1, 'SV001'), (2, 'SV002'), (3, 'SV003'), (4, 'SV004'), (5, 'SV005');
 
 -- Lecturer (đã có degree)
-INSERT INTO Lecturer (id, l_msgv, degree) VALUES
-(6, 'GV001', 'PhD'),
-(7, 'GV002', 'Master'),
-(8, 'GV003', 'Master'),
-(11, 'GV004', 'PhD'),
-(12, 'GV005', 'Bachelor');
+-- Dữ liệu Lecturer (không còn cột degree)
+INSERT INTO Lecturer (id, l_msgv) VALUES
+(6, 'GV001'),
+(7, 'GV002'),
+(8, 'GV003'),
+(11, 'GV004'),
+(12, 'GV005');
+
+-- Thêm dữ liệu cho bảng Lecturer_Degree (Một giảng viên giờ đây có thể insert nhiều dòng, đại diện cho nhiều bằng cấp)
+INSERT INTO Lecturer_Degree (lecturer_id, degree) VALUES
+(6, 'Bachelor'), (6, 'Master'), (6, 'PhD'), -- GV001 có cả 3 bằng
+(7, 'Bachelor'), (7, 'Master'),             -- GV002 có 2 bằng
+(8, 'Bachelor'), (8, 'Master'),
+(11, 'Bachelor'), (11, 'PhD'),
+(12, 'Bachelor');
 
 -- Admin (đã có degree)
 INSERT INTO Admin (id, a_msqt, degree) VALUES
@@ -747,6 +880,7 @@ INSERT INTO Comment (comment_content, post_id, ua_id) VALUES
 ('Good material', 3, 4),
 ('I will attend', 4, 5),
 ('Group 1: A, B, C', 5, 1);
+
 
 -- ============================================================
 -- KẾT THÚC
