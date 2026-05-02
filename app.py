@@ -51,12 +51,12 @@ def login():
                 user_id = user['ua_id']
 
                 try:
-                    cursor.execute("SELECT 1 FROM User_Session WHERE user_id = %s AND device_id = %s", (user_id, device_id))
-                    session_exists = cursor.fetchone()
-
-                    if not session_exists:
-                        cursor.execute("INSERT INTO User_Session (user_id, device_id) VALUES (%s, %s)", (user_id, device_id))
-                        conn.commit()
+                    cursor.execute("INSERT INTO User_Session (ua_id) VALUES (%s)", (user_id,))
+                    conn.commit()
+                    
+                    # Lưu lại session_id của DB vào Flask session để lát nữa biết đường mà Logout
+                    session['db_session_id'] = cursor.lastrowid 
+                    
                 except mysql.connector.Error as err:
                     if err.sqlstate == '45000':
                         flash('Tài khoản đã đăng nhập trên 3 thiết bị. Vui lòng đăng xuất ở thiết bị khác!', 'danger')
@@ -111,13 +111,16 @@ def login():
 def logout():
     user_id = session.get('user_id')
     device_id = session.get('device_id')
-    if user_id and device_id:
+    db_session_id = session.get('db_session_id')
+    
+    if db_session_id:
         try:
             conn = get_db_connection()
             cursor = conn.cursor()
 
-            query = "DELETE FROM User_Session WHERE user_id = %s AND device_id = %s"
-            cursor.execute(query, (user_id, device_id))
+            # Xóa đúng phiên đăng nhập hiện tại dựa trên session_id đã lưu lúc nãy
+            query = "DELETE FROM User_Session WHERE session_id = %s"
+            cursor.execute(query, (db_session_id,))
             conn.commit()
         except mysql.connector.Error as err:
             print(f"Lỗi khi xóa session: {err}")
@@ -633,12 +636,30 @@ def create_user():
             flash("Degree is required for Lecturer/Admin.", "danger")
             return redirect(url_for("user_management"))
 
-        args = (role, first_name, middle_name, last_name, sex, email, birthday, nationality, user_code, degree, 0)
-        cursor.callproc("sp_CreateUser", args)
+        # Code cũ
+        # args = (role, first_name, middle_name, last_name, sex, email, birthday, nationality, user_code, degree, 0)
+        # cursor.callproc("sp_CreateUser", args)
+    #--------------------------------------------------------------------------------------
+        # FIX thao tác Insert
+        args_user = (first_name, middle_name, last_name, sex, email, birthday, nationality, 0)
+        result_args = cursor.callproc("sp_InsertUser", args_user)
+        
+        new_user_id = result_args[7] 
 
+        if role == "Student":
+            cursor.callproc("sp_InsertStudent", (new_user_id, user_code))
+        elif role == "Lecturer":
+            cursor.callproc("sp_InsertLecturer", (new_user_id, user_code, degree))
+        elif role == "Admin":
+            cursor.callproc("sp_InsertAdmin", (new_user_id, user_code, degree))
+
+        # Thêm tính năng tạo tài khoản đăng nhập mặc định
+        # username mặc định = User_code
+        # password mặc định = pass123
+        cursor.callproc("sp_InsertUserAccount", (new_user_id, user_code, 'pass123'))
         conn.commit()
-        flash("User created successfully! Username: abc (abc@hcmut.edu.vn) | Pass: user_code", "success")
-
+        flash(f"User created successfully! Username: {user_code} | Password mặc định: pass123", "success")
+    #--------------------------------------------------------------------------------------
     except mysql.connector.Error as e:
         conn.rollback()
         flash(f"{e.msg}", "danger")
@@ -685,9 +706,14 @@ def update_user():
             flash("Email must end with @hcmut.edu.vn.", "danger")
             return redirect(url_for("user_management"))
 
+        #Code cũ
+        #args = (user_id, first_name, middle_name, last_name, sex, email, birthday, nationality)
+        #cursor.callproc("sp_UpdateUserInfo", args)
+        #------------------------------------------------
+        #Sửa tên hàm
         args = (user_id, first_name, middle_name, last_name, sex, email, birthday, nationality)
-        cursor.callproc("sp_UpdateUserInfo", args)
-
+        cursor.callproc("sp_UpdateUser", args)
+        #------------------------------------------------
         conn.commit()
         flash("User updated successfully!", "success")
 
