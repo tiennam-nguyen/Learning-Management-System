@@ -161,7 +161,8 @@ def lecturer_dashboard():
         cursor = conn.cursor(dictionary=True)
 
         query_profile = """
-            SELECT u.firstName, u.lastName, u.email, u.sex, u.birthday, l.l_msgv AS l_id, l.degree AS department
+            SELECT u.firstName, u.lastName, u.email, u.sex, u.birthday, l.l_msgv AS l_id, 
+                   (SELECT GROUP_CONCAT(degree SEPARATOR ', ') FROM Lecturer_Degree WHERE lecturer_id = l.id) AS department
             FROM User u
             JOIN Lecturer l ON u.id = l.id
             WHERE u.id = %s
@@ -428,10 +429,13 @@ def user_management():
         offset = (page - 1) * per_page
         pagination = {"page": page, "per_page": per_page, "total": total, "pages": pages}
 
+        # CODE MỚI: Fix lỗi l.degree cho trang Admin
         cursor.execute(
             f"""
             SELECT u.id, u.firstName, u.middleName, u.lastName, u.sex, u.email, u.birthday, u.nationality,
-                   s.s_mssv, l.l_msgv, l.degree AS l_degree, a.a_msqt, a.degree AS a_degree
+                   s.s_mssv, l.l_msgv, 
+                   (SELECT GROUP_CONCAT(degree SEPARATOR ', ') FROM Lecturer_Degree WHERE lecturer_id = l.id) AS l_degree, 
+                   a.a_msqt, a.degree AS a_degree
             FROM User u
             LEFT JOIN Student s ON u.id = s.id
             LEFT JOIN Lecturer l ON u.id = l.id
