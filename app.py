@@ -621,7 +621,7 @@ def create_user():
         # password mặc định = pass123
         cursor.callproc("sp_InsertUserAccount", (new_user_id, user_code, 'pass123'))
         conn.commit()
-        flash("User created successfully!", "success")
+        flash(f"User created successfully! Username: {user_code} | Password mặc định: pass123", "success")
     #--------------------------------------------------------------------------------------
     except mysql.connector.Error as e:
         conn.rollback()
