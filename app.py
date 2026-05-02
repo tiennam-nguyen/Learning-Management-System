@@ -647,9 +647,8 @@ def create_user():
         # FIX thao tác Insert
         args_user = (first_name, middle_name, last_name, sex, email, birthday, nationality, 0)
         result_args = cursor.callproc("sp_InsertUser", args_user)
-        
-        new_user_id = result_args[7] 
 
+        new_user_id = result_args[7]
         if role == "Student":
             cursor.callproc("sp_InsertStudent", (new_user_id, user_code))
         elif role == "Lecturer":

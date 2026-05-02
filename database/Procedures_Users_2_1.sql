@@ -114,27 +114,41 @@ END//
 -- Kiểm tra thêm về trình độ (degree)
 -- ----------------------------------------------------------
 DROP PROCEDURE IF EXISTS sp_InsertLecturer//
+-- ----------------------------------------------------------
+-- 1.3 Procedure: sp_InsertLecturer
+-- Chức năng: Thêm giảng viên
+-- Cập nhật: Tách dữ liệu Insert vào 2 bảng Lecturer và Lecturer_Degree
+-- ----------------------------------------------------------
+DROP PROCEDURE IF EXISTS sp_InsertLecturer//
 CREATE PROCEDURE sp_InsertLecturer(
     IN p_user_id INT,
     IN p_msgv VARCHAR(20),
     IN p_degree VARCHAR(20)
 )
 BEGIN
-    -- Kiểm tra dữ liệu bắt buộc
+    -- [1] Kiểm tra dữ liệu bắt buộc
     IF p_user_id IS NULL OR p_msgv IS NULL OR TRIM(p_msgv) = '' THEN
         SIGNAL SQLSTATE '45000' 
         SET MESSAGE_TEXT = 'ID và MSGV không hợp lệ!';
     END IF;
 
-    -- Kiểm tra ENUM degree
+    -- [2] Kiểm tra ENUM degree
     IF p_degree IS NULL OR p_degree NOT IN ('Bachelor', 'Master', 'PhD') THEN
         SIGNAL SQLSTATE '45000' 
-        SET MESSAGE_TEXT = 'Degree phải thuộc {Bachelor, Master, PhD}!';
+        SET MESSAGE_TEXT = 'Trình độ (Degree) phải thuộc {Bachelor, Master, PhD}!';
     END IF;
 
+    -- [3] Thực thi Transaction (Ghi vào 2 bảng)
     START TRANSACTION;
-    INSERT INTO Lecturer (id, l_msgv, degree) 
-    VALUES (p_user_id, TRIM(p_msgv), p_degree);
+    
+    -- Insert vào bảng Lecturer trước (bỏ cột degree đi)
+    INSERT INTO Lecturer (id, l_msgv) 
+    VALUES (p_user_id, TRIM(p_msgv));
+    
+    -- Bổ sung Insert vào bảng Lecturer_Degree (bảng con)
+    INSERT INTO Lecturer_Degree (lecturer_id, degree) 
+    VALUES (p_user_id, p_degree);
+    
     COMMIT;
 END//
 
