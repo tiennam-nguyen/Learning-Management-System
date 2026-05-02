@@ -1,20 +1,19 @@
 USE elearning;
 DELIMITER //
 
--- =====================================================================================
--- PROCEDURE: sp_CreateUser
--- MÔ TẢ:     Tạo mới một người dùng đầy đủ trong hệ thống.
--- ĐẦU VÀO:   Thông tin cá nhân (Họ tên, giới tính, email, ngày sinh, quốc tịch), 
---            Vai trò (Student/Lecturer/Admin), và Mã định danh (MSSV/MSGV/MSQT).
--- XỬ LÝ:     1. Xác thực Role và thông tin bắt buộc.
---            2. Lưu thông tin vào bảng cha `User`.
---            3. Lưu mã định danh vào bảng con tương ứng với Role.
---            4. Khởi tạo tài khoản đăng nhập (mật khẩu mặc định = mã định danh).
--- =====================================================================================
-DROP PROCEDURE IF EXISTS sp_CreateUser//
+-- ==========================================================
+-- PHẦN 1: CÁC STORED PROCEDURE THỰC HIỆN INSERT DỮ LIỆU
+-- Mỗi procedure xử lý riêng cho từng bảng (đảm bảo tính module)
+-- ==========================================================
 
-CREATE PROCEDURE sp_CreateUser(
-    IN p_role_name VARCHAR(20), 
+-- ----------------------------------------------------------
+-- 1.1 Procedure: sp_InsertUser
+-- Chức năng: Thêm mới một bản ghi vào bảng User
+-- Bao gồm kiểm tra dữ liệu đầu vào và ràng buộc nghiệp vụ
+-- ----------------------------------------------------------
+DROP PROCEDURE IF EXISTS sp_InsertUser//
+
+CREATE PROCEDURE sp_InsertUser(
     IN p_firstName VARCHAR(50),
     IN p_middleName VARCHAR(50),
     IN p_lastName VARCHAR(50),
@@ -22,22 +21,20 @@ CREATE PROCEDURE sp_CreateUser(
     IN p_email VARCHAR(100),
     IN p_birthday DATE,
     IN p_nationality VARCHAR(50),
-    IN p_user_code VARCHAR(20), 
-    IN p_degree VARCHAR(20), 
     OUT p_new_user_id INT
 )
 BEGIN
     DECLARE v_error_msg VARCHAR(512);
-	DECLARE v_userName VARCHAR(50);
     
-    -- [EXCEPTION HANDLER]: Trùng lặp dữ liệu UNIQUE
+    -- Handler: Xử lý lỗi trùng khóa (email unique)
     DECLARE EXIT HANDLER FOR 1062
     BEGIN
         ROLLBACK;
-        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Lỗi: Email hoặc Mã số định danh đã tồn tại trong hệ thống!';
+        SIGNAL SQLSTATE '45000' 
+        SET MESSAGE_TEXT = 'Email đã tồn tại trong hệ thống!';
     END;
-
-    -- [EXCEPTION HANDLER]: Rollback lỗi hệ thống
+    
+    -- Handler: Xử lý lỗi SQL tổng quát
     DECLARE EXIT HANDLER FOR SQLEXCEPTION
     BEGIN
         GET DIAGNOSTICS CONDITION 1 v_error_msg = MESSAGE_TEXT;
@@ -45,51 +42,167 @@ BEGIN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_error_msg;
     END;
 
-    -- [VALIDATION]: Role hợp lệ
-    IF p_role_name NOT IN ('Student', 'Lecturer', 'Admin') THEN
-        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Lỗi: Vai trò người dùng không hợp lệ!';
+    -- [Validation 1] Kiểm tra dữ liệu bắt buộc (NOT NULL & NOT EMPTY)
+    IF p_firstName IS NULL OR TRIM(p_firstName) = '' OR 
+        p_lastName IS NULL OR TRIM(p_lastName) = '' OR 
+        p_sex IS NULL OR TRIM(p_sex) = '' OR 
+        p_email IS NULL OR TRIM(p_email) = '' THEN
+        SIGNAL SQLSTATE '45000' 
+        SET MESSAGE_TEXT = 'Các thông tin bắt buộc không được để trống hoặc NULL!';
     END IF;
 
-    -- [VALIDATION]: Kiểm tra rỗng
-    IF TRIM(p_email) = '' OR TRIM(p_user_code) = '' THEN
-        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Lỗi: Email và Mã số định danh không được để trống!';
+    -- [Validation 2] Kiểm tra miền giá trị của giới tính (ENUM logic)
+    IF p_sex NOT IN ('Male', 'Female', 'Other') THEN
+        SIGNAL SQLSTATE '45000' 
+        SET MESSAGE_TEXT = 'Giới tính không hợp lệ!';
     END IF;
 
-	SET v_userName = SUBSTRING_INDEX(TRIM(p_email), '@', 1);
-    
+    -- [Validation 3] Kiểm tra định dạng email theo domain tổ chức
+    IF RIGHT(TRIM(p_email), 13) != '@hcmut.edu.vn' THEN
+        SIGNAL SQLSTATE '45000' 
+        SET MESSAGE_TEXT = 'Email k hợp lệ!';
+    END IF;
+
+    -- [Validation 4] Kiểm tra độ tuổi (>= 18)
+    IF p_birthday IS NULL THEN
+        SIGNAL SQLSTATE '45000' 
+        SET MESSAGE_TEXT = 'Ngày sinh là bắt buộc!';
+    END IF;
+
+    IF TIMESTAMPDIFF(YEAR, p_birthday, CURDATE()) < 18 THEN
+        SIGNAL SQLSTATE '45000' 
+        SET MESSAGE_TEXT = 'Người dùng phải đủ 18 tuổi!';
+    END IF;
+
+    -- Thực thi transaction
     START TRANSACTION;
-	
-    -- [BƯỚC 1]: Lưu bảng User
+
     INSERT INTO User (firstName, middleName, lastName, sex, email, birthday, nationality)
-    VALUES (TRIM(p_firstName), TRIM(p_middleName), TRIM(p_lastName), p_sex, TRIM(p_email), p_birthday, TRIM(p_nationality));
+    VALUES (TRIM(p_firstName), TRIM(p_middleName), TRIM(p_lastName), 
+            p_sex, TRIM(p_email), p_birthday, TRIM(p_nationality));
     
+    -- Lấy ID vừa insert
     SET p_new_user_id = LAST_INSERT_ID();
-
-    -- [BƯỚC 2]: Phân bổ vào bảng con (ĐÃ SỬA THÊM DEGREE)
-    IF p_role_name = 'Student' THEN
-        INSERT INTO Student (id, s_mssv) VALUES (p_new_user_id, TRIM(p_user_code));
-    ELSEIF p_role_name = 'Lecturer' THEN
-        INSERT INTO Lecturer (id, l_msgv, degree) VALUES (p_new_user_id, TRIM(p_user_code), p_degree);
-    ELSEIF p_role_name = 'Admin' THEN
-        INSERT INTO Admin (id, a_msqt, degree) VALUES (p_new_user_id, TRIM(p_user_code), p_degree);
-    END IF;
-
-    -- [BƯỚC 3]: Tạo tài khoản
-    INSERT INTO User_acc (ua_id, ua_username, ua_password)
-    VALUES (p_new_user_id, TRIM(v_userName), SHA2(TRIM(p_user_code), 256));
 
     COMMIT;
 END//
--- =====================================================================================
--- PROCEDURE: sp_UpdateUserInfo
--- MÔ TẢ:     Cập nhật thông tin cá nhân của một người dùng đã tồn tại.
--- ĐẦU VÀO:   ID người dùng và toàn bộ thông tin cá nhân mới.
--- XỬ LÝ:     1. Kiểm tra tính duy nhất của Email mới.
---            2. Cập nhật dữ liệu tương ứng trong bảng `User`.
--- =====================================================================================
-DROP PROCEDURE IF EXISTS sp_UpdateUserInfo//
 
-CREATE PROCEDURE sp_UpdateUserInfo(
+-- ----------------------------------------------------------
+-- 1.2 Procedure: sp_InsertStudent
+-- Chức năng: Thêm một sinh viên dựa trên user_id đã tồn tại
+-- ----------------------------------------------------------
+DROP PROCEDURE IF EXISTS sp_InsertStudent//
+CREATE PROCEDURE sp_InsertStudent(
+    IN p_user_id INT,
+    IN p_mssv VARCHAR(20)
+)
+BEGIN
+    -- Kiểm tra dữ liệu đầu vào
+    IF p_user_id IS NULL OR p_mssv IS NULL OR TRIM(p_mssv) = '' THEN
+        SIGNAL SQLSTATE '45000' 
+        SET MESSAGE_TEXT = 'ID và MSSV không được để trống!';
+    END IF;
+
+    START TRANSACTION;
+    INSERT INTO Student (id, s_mssv) VALUES (p_user_id, TRIM(p_mssv));
+    COMMIT;
+END//
+
+-- ----------------------------------------------------------
+-- 1.3 Procedure: sp_InsertLecturer
+-- Chức năng: Thêm giảng viên
+-- Kiểm tra thêm về trình độ (degree)
+-- ----------------------------------------------------------
+DROP PROCEDURE IF EXISTS sp_InsertLecturer//
+CREATE PROCEDURE sp_InsertLecturer(
+    IN p_user_id INT,
+    IN p_msgv VARCHAR(20),
+    IN p_degree VARCHAR(20)
+)
+BEGIN
+    -- Kiểm tra dữ liệu bắt buộc
+    IF p_user_id IS NULL OR p_msgv IS NULL OR TRIM(p_msgv) = '' THEN
+        SIGNAL SQLSTATE '45000' 
+        SET MESSAGE_TEXT = 'ID và MSGV không hợp lệ!';
+    END IF;
+
+    -- Kiểm tra ENUM degree
+    IF p_degree IS NULL OR p_degree NOT IN ('Bachelor', 'Master', 'PhD') THEN
+        SIGNAL SQLSTATE '45000' 
+        SET MESSAGE_TEXT = 'Degree phải thuộc {Bachelor, Master, PhD}!';
+    END IF;
+
+    START TRANSACTION;
+    INSERT INTO Lecturer (id, l_msgv, degree) 
+    VALUES (p_user_id, TRIM(p_msgv), p_degree);
+    COMMIT;
+END//
+
+-- ----------------------------------------------------------
+-- 1.4 Procedure: sp_InsertAdmin
+-- Chức năng: Thêm quản trị viên
+-- ----------------------------------------------------------
+DROP PROCEDURE IF EXISTS sp_InsertAdmin//
+CREATE PROCEDURE sp_InsertAdmin(
+    IN p_user_id INT,
+    IN p_msqt VARCHAR(20),
+    IN p_degree VARCHAR(20)
+)
+BEGIN
+    -- Kiểm tra dữ liệu đầu vào
+    IF p_user_id IS NULL OR p_msqt IS NULL OR TRIM(p_msqt) = '' THEN
+        SIGNAL SQLSTATE '45000' 
+        SET MESSAGE_TEXT = 'ID và MSQT không hợp lệ!';
+    END IF;
+
+    -- Kiểm tra degree
+    IF p_degree IS NULL OR p_degree NOT IN ('Bachelor', 'Master', 'PhD') THEN
+        SIGNAL SQLSTATE '45000' 
+        SET MESSAGE_TEXT = 'Degree không hợp lệ!';
+    END IF;
+
+    START TRANSACTION;
+    INSERT INTO Admin (id, a_msqt, degree) 
+    VALUES (p_user_id, TRIM(p_msqt), p_degree);
+    COMMIT;
+END//
+
+-- ----------------------------------------------------------
+-- 1.5 Procedure: sp_InsertUserAccount
+-- Chức năng: Tạo tài khoản đăng nhập cho User
+-- Password được hash bằng SHA2
+-- ----------------------------------------------------------
+DROP PROCEDURE IF EXISTS sp_InsertUserAccount//
+CREATE PROCEDURE sp_InsertUserAccount(
+    IN p_user_id INT,
+    IN p_username VARCHAR(50),
+    IN p_raw_password VARCHAR(255)
+)
+BEGIN
+    -- Kiểm tra dữ liệu đầu vào
+    IF p_user_id IS NULL OR p_username IS NULL OR TRIM(p_username) = '' 
+    OR p_raw_password IS NULL OR TRIM(p_raw_password) = '' THEN
+        SIGNAL SQLSTATE '45000' 
+        SET MESSAGE_TEXT = 'Thiếu thông tin tài khoản!';
+    END IF;
+
+    START TRANSACTION;
+    INSERT INTO User_acc (ua_id, ua_username, ua_password)
+    VALUES (p_user_id, TRIM(p_username), SHA2(TRIM(p_raw_password), 256));
+    COMMIT;
+END//
+
+-- ==========================================================
+-- PHẦN 2: PROCEDURE UPDATE
+-- ==========================================================
+
+-- ----------------------------------------------------------
+-- Procedure: sp_UpdateUser
+-- Chức năng: Cập nhật thông tin User
+-- Bao gồm kiểm tra tồn tại + validation đầy đủ
+-- ----------------------------------------------------------
+DROP PROCEDURE IF EXISTS sp_UpdateUser//
+CREATE PROCEDURE sp_UpdateUser(
     IN p_user_id INT,
     IN p_firstName VARCHAR(50),
     IN p_middleName VARCHAR(50),
@@ -101,8 +214,9 @@ CREATE PROCEDURE sp_UpdateUserInfo(
 )
 BEGIN
     DECLARE v_error_msg VARCHAR(512);
+    DECLARE v_exists INT DEFAULT 0;
 
-    -- [EXCEPTION HANDLER]: Rollback giao dịch và ném lỗi nếu có exception
+    -- Handler lỗi SQL
     DECLARE EXIT HANDLER FOR SQLEXCEPTION
     BEGIN
         GET DIAGNOSTICS CONDITION 1 v_error_msg = MESSAGE_TEXT;
@@ -110,17 +224,52 @@ BEGIN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_error_msg;
     END;
 
-    -- [VALIDATION]: Tránh xung đột khóa Unique do email đã thuộc sở hữu của User khác
+    -- [Check 1] Kiểm tra ID hợp lệ và tồn tại
+    IF p_user_id IS NULL THEN
+        SIGNAL SQLSTATE '45000' 
+        SET MESSAGE_TEXT = 'ID không hợp lệ!';
+    END IF;
+
+    SELECT COUNT(*) INTO v_exists FROM User WHERE id = p_user_id;
+    IF v_exists = 0 THEN
+        SIGNAL SQLSTATE '45000' 
+        SET MESSAGE_TEXT = 'User không tồn tại!';
+    END IF;
+
+    -- [Check 2] Validation dữ liệu tương tự 
+    IF p_firstName IS NULL OR TRIM(p_firstName) = '' OR 
+        p_lastName IS NULL OR TRIM(p_lastName) = '' OR 
+        p_sex IS NULL OR TRIM(p_sex) = '' OR 
+        p_email IS NULL OR TRIM(p_email) = '' THEN
+        SIGNAL SQLSTATE '45000' 
+        SET MESSAGE_TEXT = 'Thiếu dữ liệu bắt buộc!';
+    END IF;
+
+    IF p_sex NOT IN ('Male', 'Female', 'Other') THEN
+        SIGNAL SQLSTATE '45000' 
+        SET MESSAGE_TEXT = 'Giới tính không hợp lệ!';
+    END IF;
+
+    IF RIGHT(TRIM(p_email), 13) != '@hcmut.edu.vn' THEN
+        SIGNAL SQLSTATE '45000' 
+        SET MESSAGE_TEXT = 'Email k hợp lệ';
+    END IF;
+
+    IF p_birthday IS NULL OR TIMESTAMPDIFF(YEAR, p_birthday, CURDATE()) < 18 THEN
+        SIGNAL SQLSTATE '45000' 
+        SET MESSAGE_TEXT = 'Tuổi không hợp lệ!';
+    END IF;
+
+    -- [Check 3] Ràng buộc unique email
     IF EXISTS (SELECT 1 FROM User WHERE email = TRIM(p_email) AND id != p_user_id) THEN
-        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Lỗi: Email này đã được sử dụng bởi người dùng khác!';
+        SIGNAL SQLSTATE '45000' 
+        SET MESSAGE_TEXT = 'Email đã được sử dụng!';
     END IF;
 
     START TRANSACTION;
-    
-    -- [CẬP NHẬT]: Ghi đè thông tin mới vào bảng `User`
+
     UPDATE User 
-    SET 
-        firstName = TRIM(p_firstName),
+    SET firstName = TRIM(p_firstName),
         middleName = TRIM(p_middleName),
         lastName = TRIM(p_lastName),
         sex = p_sex,
@@ -132,84 +281,26 @@ BEGIN
     COMMIT;
 END //
 
+-- ==========================================================
+-- PHẦN 3: PROCEDURE DELETE
+-- ==========================================================
 
--- =====================================================================================
--- PROCEDURE: sp_ChangePassword
--- MÔ TẢ:     Thay đổi mật khẩu đăng nhập của người dùng.
--- ĐẦU VÀO:   ID người dùng, Mật khẩu cũ (plain text), Mật khẩu mới (plain text).
--- XỬ LÝ:     1. Xác minh độ dài tối thiểu của mật khẩu mới.
---            2. Đối chiếu hash mật khẩu cũ với dữ liệu đang lưu.
---            3. Cập nhật hash mật khẩu mới.
--- =====================================================================================
-DROP PROCEDURE IF EXISTS sp_ChangePassword//
-
-CREATE PROCEDURE sp_ChangePassword(
-    IN p_user_id INT,
-    IN p_old_password VARCHAR(255),
-    IN p_new_password VARCHAR(255)
-)
-BEGIN
-    DECLARE v_current_hash VARCHAR(255);
-    DECLARE v_error_msg VARCHAR(512);
-
-    -- [EXCEPTION HANDLER]: Rollback và ném lỗi (giới hạn thông báo 128 ký tự để bảo mật)
-    DECLARE EXIT HANDLER FOR SQLEXCEPTION
-    BEGIN
-        GET DIAGNOSTICS CONDITION 1 v_error_msg = MESSAGE_TEXT;
-        ROLLBACK;
-        SET v_error_msg = SUBSTRING(v_error_msg, 1, 128);
-        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_error_msg;
-    END;
-
-    -- [VALIDATION]: Đảm bảo không có trường nào bị bỏ trống
-    IF p_user_id IS NULL OR p_old_password = '' OR p_new_password = '' THEN
-        SIGNAL SQLSTATE '45000' 
-        SET MESSAGE_TEXT = 'Lỗi: Các trường mật khẩu không được để trống!';
-    END IF;
-
-    -- [TRUY XUẤT]: Lấy mã băm mật khẩu hiện tại từ Database
-    SELECT ua_password INTO v_current_hash
-    FROM User_acc
-    WHERE ua_id = p_user_id;
-
-    IF v_current_hash IS NULL THEN
-        SIGNAL SQLSTATE '45000' 
-        SET MESSAGE_TEXT = 'Lỗi: Tài khoản không tồn tại!';
-    END IF;
-
-    -- [XÁC THỰC]: Băm mật khẩu cũ người dùng nhập và so sánh với mã băm trong DB
-    IF v_current_hash != SHA2(p_old_password, 256) THEN
-        SIGNAL SQLSTATE '45000' 
-        SET MESSAGE_TEXT = 'Lỗi: Mật khẩu cũ không chính xác!';
-    END IF;
-
-    START TRANSACTION;
-    
-    -- [CẬP NHẬT]: Mã hóa và lưu mật khẩu mới
-    UPDATE User_acc 
-    SET ua_password = SHA2(p_new_password, 256)
-    WHERE ua_id = p_user_id;
-
-    COMMIT;
-END //
-
-
--- =====================================================================================
--- PROCEDURE: sp_DeleteUser
--- MÔ TẢ:     Xóa một người dùng khỏi hệ thống.
--- ĐẦU VÀO:   ID người dùng cần xóa.
--- XỬ LÝ:     Nhờ cơ chế ON DELETE CASCADE, chỉ cần xóa ở bảng cha `User`, 
---            dữ liệu ở các bảng con (Student/Lecturer/Admin, User_acc) sẽ tự động bị xóa.
--- =====================================================================================
+-- ----------------------------------------------------------
+-- Procedure: sp_DeleteUser
+-- Chức năng: Xóa User
+-- Có kiểm tra ràng buộc dữ liệu học thuật 
+-- ----------------------------------------------------------
 DROP PROCEDURE IF EXISTS sp_DeleteUser//
-
 CREATE PROCEDURE sp_DeleteUser(
     IN p_user_id INT
 )
 BEGIN
     DECLARE v_error_msg VARCHAR(512);
+    DECLARE v_exists INT DEFAULT 0;
+    DECLARE v_is_teaching INT DEFAULT 0;
+    DECLARE v_has_attempt INT DEFAULT 0;
 
-    -- [EXCEPTION HANDLER]: Rollback giao dịch và ném lỗi nếu có exception
+    -- Handler lỗi SQL
     DECLARE EXIT HANDLER FOR SQLEXCEPTION
     BEGIN
         GET DIAGNOSTICS CONDITION 1 v_error_msg = MESSAGE_TEXT;
@@ -217,11 +308,35 @@ BEGIN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = v_error_msg;
     END;
 
-    START TRANSACTION;
-    
-    -- [XÓA DỮ LIỆU]: Thực hiện xóa vật lý ở bảng gốc
-    DELETE FROM User WHERE id = p_user_id;
+    -- [Check 1] ID hợp lệ
+    IF p_user_id IS NULL THEN
+        SIGNAL SQLSTATE '45000' 
+        SET MESSAGE_TEXT = 'ID không hợp lệ!';
+    END IF;
 
+    -- [Check 2] User tồn tại
+    SELECT COUNT(*) INTO v_exists FROM User WHERE id = p_user_id;
+    IF v_exists = 0 THEN
+        SIGNAL SQLSTATE '45000' 
+        SET MESSAGE_TEXT = 'User không tồn tại!';
+    END IF;
+
+    -- [Check 3] Ràng buộc giảng viên (đã dạy lớp)
+    SELECT COUNT(*) INTO v_is_teaching FROM Class WHERE lecturer_id = p_user_id;
+    IF v_is_teaching > 0 THEN
+        SIGNAL SQLSTATE '45000' 
+        SET MESSAGE_TEXT = 'Không thể xóa giảng viên đã/đang dạy!';
+    END IF;
+
+    -- [Check 4] Ràng buộc sinh viên (đã làm bài)
+    SELECT COUNT(*) INTO v_has_attempt FROM Attempt WHERE student_id = p_user_id;
+    IF v_has_attempt > 0 THEN
+        SIGNAL SQLSTATE '45000' 
+        SET MESSAGE_TEXT = 'Không thể xóa sinh viên đã có Attempt!';
+    END IF;
+
+    START TRANSACTION;
+    DELETE FROM User WHERE id = p_user_id;
     COMMIT;
 END //
 
