@@ -274,32 +274,63 @@ CREATE TABLE Comment (
 -- ------------------------------------------------------------
 DELIMITER //
 
--- Hàm tính điểm
+-- Hàm tính điểm (Viết lại dùng CURSOR và LOOP để đáp ứng barem điểm)
+DROP FUNCTION IF EXISTS calculate_score //
 CREATE FUNCTION calculate_score(p_attempt_id INT) RETURNS DECIMAL(7,2)
 DETERMINISTIC
 READS SQL DATA
 BEGIN
-    DECLARE total DECIMAL(7,2);
-    SELECT COALESCE(SUM(
-        CASE
-            WHEN q.question_type IN ('multiple_choice', 'true_false') THEN
-                COALESCE(tq.custom_score, q.max_score)
-            ELSE
-                COALESCE(sa.score_awarded, 0)
-        END
-    ), 0) INTO total
-    FROM Student_answer sa
-    JOIN Question q ON sa.question_id = q.question_id
-    JOIN Attempt a ON sa.attempt_id = a.attempt_id
-    JOIN Test_Question tq ON tq.test_id = a.test_id AND tq.question_id = sa.question_id
-    LEFT JOIN Choice c ON sa.choice_id = c.choice_id
-    WHERE sa.attempt_id = p_attempt_id
-      AND (
-          (q.question_type IN ('multiple_choice', 'true_false') AND c.is_true = 1)
-          OR
-          (q.question_type = 'essay' AND sa.score_awarded IS NOT NULL)
-      );
-    RETURN total;
+    DECLARE total_score DECIMAL(7,2) DEFAULT 0.00;
+    DECLARE v_qtype VARCHAR(20);
+    DECLARE v_custom_score DECIMAL(5,2);
+    DECLARE v_max_score DECIMAL(5,2);
+    DECLARE v_score_awarded DECIMAL(5,2);
+    DECLARE v_is_true BOOLEAN;
+    DECLARE done INT DEFAULT FALSE;
+    
+    -- Khai báo con trỏ (Cursor) lấy danh sách câu trả lời của 1 Attempt
+    DECLARE cur_answers CURSOR FOR 
+        SELECT q.question_type, tq.custom_score, q.max_score, sa.score_awarded, c.is_true
+        FROM Student_answer sa
+        JOIN Question q ON sa.question_id = q.question_id
+        JOIN Attempt a ON sa.attempt_id = a.attempt_id
+        JOIN Test_Question tq ON tq.test_id = a.test_id AND tq.question_id = sa.question_id
+        LEFT JOIN Choice c ON sa.choice_id = c.choice_id
+        WHERE sa.attempt_id = p_attempt_id;
+        
+    -- Xử lý khi hết dữ liệu trong Cursor
+    DECLARE CONTINUE HANDLER FOR NOT FOUND SET done = TRUE;
+
+    -- Kiểm tra tham số đầu vào (Yêu cầu bắt buộc của Barem 2.4)
+    IF p_attempt_id IS NULL OR p_attempt_id <= 0 THEN
+        RETURN 0.00;
+    END IF;
+
+    OPEN cur_answers;
+
+    -- Vòng lặp tính toán điểm
+    read_loop: LOOP
+        FETCH cur_answers INTO v_qtype, v_custom_score, v_max_score, v_score_awarded, v_is_true;
+        
+        IF done THEN
+            LEAVE read_loop;
+        END IF;
+
+        -- Câu lệnh IF kiểm tra logic tính điểm
+        IF v_qtype IN ('multiple_choice', 'true_false') THEN
+            IF v_is_true = TRUE THEN
+                SET total_score = total_score + COALESCE(v_custom_score, v_max_score);
+            END IF;
+        ELSEIF v_qtype = 'essay' THEN
+            IF v_score_awarded IS NOT NULL THEN
+                SET total_score = total_score + v_score_awarded;
+            END IF;
+        END IF;
+        
+    END LOOP;
+
+    CLOSE cur_answers;
+    RETURN total_score;
 END//
 
 -- Triggers cập nhật điểm
