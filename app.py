@@ -1043,7 +1043,6 @@ def add_chapter(class_id):
 
     if request.method == 'POST':
         chapter_name = request.form.get('chapter_name')
-        description = request.form.get('description')
 
         if not chapter_name:
             flash('Tên chương không được để trống!', 'warning')
@@ -1055,8 +1054,8 @@ def add_chapter(class_id):
             cursor.execute("SELECT COALESCE(MAX(chapter_id), 0) + 1 FROM Chapter WHERE class_id =%s", (class_id,))
             next_chapter_id = cursor.fetchone()[0]
 
-            query = "INSERT INTO Chapter (class_id, chapter_id, chapter_name, description) VALUES (%s, %s, %s, %s)"
-            cursor.execute(query, (class_id, next_chapter_id, chapter_name, description))
+            query = "INSERT INTO Chapter (class_id, chapter_id, chapter_name) VALUES (%s, %s, %s)"
+            cursor.execute(query, (class_id, next_chapter_id, chapter_name))
 
             conn.commit()
             flash(f'Đã thêm chương {next_chapter_id}: {chapter_name}', 'success')
