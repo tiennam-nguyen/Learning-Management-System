@@ -236,19 +236,13 @@ BEGIN
         SET MESSAGE_TEXT = 'User không tồn tại!';
     END IF;
 
-    -- [Check 2] Validation dữ liệu tương tự Insert
+    -- [Check 2] Validation dữ liệu tương tự 
     IF p_firstName IS NULL OR TRIM(p_firstName) = '' OR 
         p_lastName IS NULL OR TRIM(p_lastName) = '' OR 
         p_sex IS NULL OR TRIM(p_sex) = '' OR 
         p_email IS NULL OR TRIM(p_email) = '' THEN
         SIGNAL SQLSTATE '45000' 
         SET MESSAGE_TEXT = 'Thiếu dữ liệu bắt buộc!';
-    END IF;
-
-    IF CHAR_LENGTH(TRIM(p_firstName)) < 2 OR 
-        CHAR_LENGTH(TRIM(p_lastName)) < 2 THEN
-        SIGNAL SQLSTATE '45000' 
-        SET MESSAGE_TEXT = 'Tên không hợp lệ!';
     END IF;
 
     IF p_sex NOT IN ('Male', 'Female', 'Other') THEN
