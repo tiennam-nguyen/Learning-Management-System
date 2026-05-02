@@ -294,6 +294,54 @@ BEGIN
 
     COMMIT;
 END //
+-- ----------------------------------------------------------
+-- Procedure: sp_ChangePassword
+-- Chức năng: Đổi mật khẩu cho người dùng
+-- ----------------------------------------------------------
+DROP PROCEDURE IF EXISTS sp_ChangePassword;
+
+CREATE PROCEDURE sp_ChangePassword(
+    IN p_user_id INT,
+    IN p_old_password VARCHAR(255),
+    IN p_new_password VARCHAR(255)
+)
+BEGIN
+    DECLARE v_user_exists INT DEFAULT 0;
+    DECLARE v_is_valid INT DEFAULT 0;
+
+    -- [1] Kiểm tra xem tài khoản có tồn tại trong hệ thống không
+    SELECT COUNT(*) INTO v_user_exists 
+    FROM User_acc 
+    WHERE ua_id = p_user_id;
+
+    IF v_user_exists = 0 THEN
+        SIGNAL SQLSTATE '45000' 
+        SET MESSAGE_TEXT = 'Tài khoản người dùng không tồn tại!';
+    END IF;
+
+    -- [2] Kiểm tra xem mật khẩu cũ có khớp hay không
+    -- Mật khẩu dưới DB đang được băm bằng hàm SHA2(..., 256)
+    SELECT COUNT(*) INTO v_is_valid 
+    FROM User_acc 
+    WHERE ua_id = p_user_id AND ua_password = SHA2(p_old_password, 256);
+
+    IF v_is_valid = 0 THEN
+        SIGNAL SQLSTATE '45000' 
+        SET MESSAGE_TEXT = 'Mật khẩu không chính xác!';
+    END IF;
+
+    -- [3] Kiểm tra mật khẩu mới không được trùng với mật khẩu cũ
+    IF p_old_password = p_new_password THEN
+        SIGNAL SQLSTATE '45000' 
+        SET MESSAGE_TEXT = 'Mật khẩu mới không được trùng với mật khẩu cũ!';
+    END IF;
+
+    -- [4] Thực hiện cập nhật mật khẩu mới (nhớ mã hóa SHA-256)
+    UPDATE User_acc 
+    SET ua_password = SHA2(p_new_password, 256)
+    WHERE ua_id = p_user_id;
+
+END//
 
 -- ==========================================================
 -- PHẦN 3: PROCEDURE DELETE
