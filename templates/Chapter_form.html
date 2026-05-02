@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <title>Thêm Chương Mới</title>
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; margin: 40px; background: #f4f4f4; }
+        .container { max-width: 600px; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        h2 { color: #333; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; font-weight: bold; margin-bottom: 5px; }
+        input[type="text"], textarea { width: 100%; padding: 8px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
+        button { background: #28a745; color: white; padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #218838; }
+        .back-link { display: inline-block; margin-bottom: 20px; color: #007bff; text-decoration: none; }
+        .alert { padding: 10px; margin-bottom: 15px; border-radius: 4px; background: #ffeeba; color: #856404; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <a href="/class/{{ class_id }}" class="back-link">← Quay lại lớp học</a>
+
+    <h2>Thêm Chương Mới</h2>
+    <p>Đang thêm vào lớp ID: <strong>{{ class_id }}</strong></p>
+
+    <!-- Hiển thị thông báo lỗi/thành công nếu có -->
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        {% for message in messages %}
+          <div class="alert">{{ message }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <form action="/class/{{ class_id }}/chapter/add" method="POST">
+        <div class="form-group">
+            <label>Tên chương:</label>
+            <input type="text" name="chapter_name" required placeholder="Nhập tên chương...">
+        </div>
+
+        <div class="form-group">
+            <label>Mô tả:</label>
+            <textarea name="description" rows="5" placeholder="Nhập mô tả chương..."></textarea>
+        </div>
+
+        <button type="submit">Lưu chương</button>
+    </form>
+</div>
+
+</body>
+</html>
