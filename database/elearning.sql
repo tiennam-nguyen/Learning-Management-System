@@ -61,8 +61,15 @@ CREATE TABLE Student (
 CREATE TABLE Lecturer (
     id INT PRIMARY KEY,
     l_msgv VARCHAR(20) UNIQUE NOT NULL,
-    degree ENUM('Bachelor', 'Master', 'PhD') NOT NULL,
     FOREIGN KEY (id) REFERENCES User(id) ON DELETE CASCADE
+);
+
+-- Thêm bảng mới để lưu thuộc tính đa trị degree của giảng viên
+CREATE TABLE Lecturer_Degree (
+    lecturer_id INT,
+    degree ENUM('Bachelor', 'Master', 'PhD') NOT NULL,
+    PRIMARY KEY (lecturer_id, degree),
+    FOREIGN KEY (lecturer_id) REFERENCES Lecturer(id) ON DELETE CASCADE
 );
 
 CREATE TABLE Admin (
@@ -152,9 +159,10 @@ ALTER TABLE Topic ADD COLUMN allowed_extensions VARCHAR(100) DEFAULT 'pdf,docx,p
 CREATE TABLE Test (
     test_id INT AUTO_INCREMENT PRIMARY KEY,
     test_name VARCHAR(255) NOT NULL,
-    test_start DATETIME NOT NULL,
-    test_end DATETIME NOT NULL,
-    test_timer INT COMMENT 'Thời gian làm bài (phút)',
+    test_type ENUM('Quiz', 'File_submission') NOT NULL, 
+    test_start DATETIME NOT NULL, -- Thêm NOT NULL
+    test_end DATETIME NOT NULL,   -- Thêm NOT NULL
+    test_timer INT NOT NULL COMMENT 'Thời gian làm bài (phút), 0 nếu không giới hạn', -- Thêm NOT NULL
     class_id INT NOT NULL,
     chapter_id INT NULL,
 
@@ -166,21 +174,16 @@ CREATE TABLE Test (
 
 CREATE TABLE Quiz (
     test_id INT PRIMARY KEY,
-    quizz_id VARCHAR(50) UNIQUE NOT NULL,
     FOREIGN KEY (test_id) REFERENCES Test(test_id) ON DELETE CASCADE
 );
 
 CREATE TABLE File_submission (
     test_id INT PRIMARY KEY,
-    fs_id VARCHAR(50) UNIQUE NOT NULL,
-    file_size DECIMAL(10, 2) NOT NULL,
-    allowed_extensions VARCHAR(255) DEFAULT '.pdf, .docx, .zip, .tar', 
     path VARCHAR(512),
     FOREIGN KEY (test_id) REFERENCES Test(test_id) ON DELETE CASCADE,
     
     CONSTRAINT chk_fSize CHECK (file_size > 0 AND file_size <= 200)
 );
-
 -- ------------------------------------------------------------
 -- 6. NGÂN HÀNG CÂU HỎI
 -- ------------------------------------------------------------
@@ -260,10 +263,8 @@ CREATE TABLE Post (
     post_end DATETIME NULL,
     ua_id INT NOT NULL,
     class_id INT NOT NULL,
-    FOREIGN KEY (ua_id) REFERENCES User_acc(ua_id),
-    FOREIGN KEY (class_id) REFERENCES Class(class_id) ON DELETE CASCADE,
-    -- add constraint
-    CONSTRAINT chk_post_time CHECK (post_end IS NULL OR post_start < post_end)
+    FOREIGN KEY (ua_id) REFERENCES User_acc(ua_id) ON DELETE CASCADE, -- Đã bổ sung
+    FOREIGN KEY (class_id) REFERENCES Class(class_id) ON DELETE CASCADE
 );
 
 CREATE TABLE Comment (
@@ -273,7 +274,7 @@ CREATE TABLE Comment (
     post_id INT NOT NULL,
     ua_id INT NOT NULL,
     FOREIGN KEY (post_id) REFERENCES Post(post_id) ON DELETE CASCADE,
-    FOREIGN KEY (ua_id) REFERENCES User_acc(ua_id)
+    FOREIGN KEY (ua_id) REFERENCES User_acc(ua_id) ON DELETE CASCADE -- Đã bổ sung
 );
 
 ALTER TABLE Comment 
@@ -602,6 +603,139 @@ END//
 
 DELIMITER ;
 
+-- ============================================================
+-- PHẦN BỔ SUNG: CÁC BẢNG VÀ TRIGGER ĐỂ FIX COMMENT CỦA GIẢNG VIÊN
+-- ============================================================
+
+-- 1. Xử lý liên kết ĐỆ QUY (Recursive) cho EERD: Bảng môn học tiên quyết
+CREATE TABLE Subject_Prerequisite (
+    subject_id INT NOT NULL,
+    prereq_id INT NOT NULL,
+    PRIMARY KEY (subject_id, prereq_id),
+    FOREIGN KEY (subject_id) REFERENCES Subject(subject_id) ON DELETE CASCADE,
+    FOREIGN KEY (prereq_id) REFERENCES Subject(subject_id) ON DELETE CASCADE,
+    CONSTRAINT chk_no_self_prereq CHECK (subject_id != prereq_id)
+);
+
+-- 2. Xử lý giới hạn 3 thiết bị đăng nhập: Tạo bảng Session
+CREATE TABLE User_Session (
+    session_id INT AUTO_INCREMENT PRIMARY KEY,
+    ua_id INT NOT NULL,
+    login_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (ua_id) REFERENCES User_acc(ua_id) ON DELETE CASCADE
+);
+
+DELIMITER //
+
+-- Bắt lỗi đăng nhập quá 3 thiết bị
+CREATE TRIGGER trg_limit_3_devices
+BEFORE INSERT ON User_Session
+FOR EACH ROW
+BEGIN
+    DECLARE active_sessions INT;
+    SELECT COUNT(*) INTO active_sessions FROM User_Session WHERE ua_id = NEW.ua_id;
+    IF active_sessions >= 3 THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Tài khoản đang đăng nhập trên 3 thiết bị, vui lòng đăng xuất bớt.';
+    END IF;
+END//
+
+-- 3. Xử lý thiếu Trigger UPDATE trên bảng Test (Ngăn đổi class_id sang lớp đang Closed)
+CREATE TRIGGER trg_check_class_status_for_test_update
+BEFORE UPDATE ON Test
+FOR EACH ROW
+BEGIN
+    DECLARE v_status_name VARCHAR(50);
+    IF NEW.class_id != OLD.class_id THEN
+        SELECT s.status_display INTO v_status_name
+        FROM Class c JOIN Status s ON c.status_id = s.status_id
+        WHERE c.class_id = NEW.class_id;
+        
+        IF v_status_name != 'Open' THEN
+            SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Lớp chuyển đến phải ở trạng thái Open.';
+        END IF;
+    END IF;
+END//
+
+-- 4. Xử lý Ràng buộc: Sinh viên không được hủy lớp nếu làm tổng tín chỉ < 11
+CREATE TRIGGER trg_min_11_credits_delete
+BEFORE DELETE ON Enrollment
+FOR EACH ROW
+BEGIN
+    DECLARE total_credits INT;
+    DECLARE dropping_credit INT;
+    
+    SELECT su.credit INTO dropping_credit
+    FROM Class c JOIN Subject su ON c.subject_id = su.subject_id
+    WHERE c.class_id = OLD.class_id;
+    
+    SELECT COALESCE(SUM(su.credit), 0) INTO total_credits
+    FROM Enrollment e
+    JOIN Class c ON e.class_id = c.class_id
+    JOIN Subject su ON c.subject_id = su.subject_id
+    WHERE e.student_id = OLD.student_id 
+      AND c.semester_id = (SELECT semester_id FROM Class WHERE class_id = OLD.class_id);
+      
+    IF (total_credits - dropping_credit) < 11 AND total_credits >= 11 THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Không thể hủy môn: Tổng số tín chỉ trong học kỳ rớt xuống dưới 11.';
+    END IF;
+END//
+
+-- 5. Xử lý Ràng buộc: Bài kiểm tra phải có ít nhất 1 câu hỏi
+CREATE TRIGGER trg_prevent_delete_last_question
+BEFORE DELETE ON Test_Question
+FOR EACH ROW
+BEGIN
+    DECLARE q_count INT;
+    SELECT COUNT(*) INTO q_count FROM Test_Question WHERE test_id = OLD.test_id;
+    IF q_count <= 1 THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Bài kiểm tra phải có ít nhất 1 câu hỏi, không thể xóa câu cuối cùng.';
+    END IF;
+END//
+
+-- 6. Xử lý Ràng buộc: Câu hỏi phải có ít nhất 1 đáp án đúng
+CREATE TRIGGER trg_prevent_delete_last_correct_choice
+BEFORE DELETE ON Choice
+FOR EACH ROW
+BEGIN
+    DECLARE correct_count INT;
+    IF OLD.is_true = 1 THEN
+        SELECT COUNT(*) INTO correct_count FROM Choice WHERE question_id = OLD.question_id AND is_true = 1;
+        IF correct_count <= 1 THEN
+            SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Câu hỏi trắc nghiệm phải có ít nhất 1 đáp án đúng.';
+        END IF;
+    END IF;
+END//
+
+CREATE TRIGGER trg_prevent_uncheck_last_correct_choice
+BEFORE UPDATE ON Choice
+FOR EACH ROW
+BEGIN
+    DECLARE correct_count INT;
+    IF OLD.is_true = 1 AND NEW.is_true = 0 THEN
+        SELECT COUNT(*) INTO correct_count FROM Choice WHERE question_id = OLD.question_id AND is_true = 1;
+        IF correct_count <= 1 THEN
+            SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Câu hỏi trắc nghiệm phải có ít nhất 1 đáp án đúng.';
+        END IF;
+    END IF;
+END//
+
+-- [MỚI] Chặn update câu trắc nghiệm thành tự luận nếu đang có Choice
+CREATE TRIGGER trg_prevent_update_to_essay_with_choices
+BEFORE UPDATE ON Question
+FOR EACH ROW
+BEGIN
+    DECLARE choice_count INT;
+    IF OLD.question_type != 'essay' AND NEW.question_type = 'essay' THEN
+        SELECT COUNT(*) INTO choice_count FROM Choice WHERE question_id = NEW.question_id;
+        IF choice_count > 0 THEN
+            SIGNAL SQLSTATE '45000' 
+            SET MESSAGE_TEXT = 'Không thể đổi thành câu hỏi tự luận vì câu hỏi này đang chứa các đáp án (Choices). Vui lòng xóa các đáp án trước.';
+        END IF;
+    END IF;
+END//
+
+DELIMITER ;
+
 -- ------------------------------------------------------------
 -- 10. DỮ LIỆU MẪU (ĐÃ CẬP NHẬT)
 -- ------------------------------------------------------------
@@ -654,12 +788,21 @@ INSERT INTO Student (id, s_mssv) VALUES
 (1, 'SV001'), (2, 'SV002'), (3, 'SV003'), (4, 'SV004'), (5, 'SV005');
 
 -- Lecturer (đã có degree)
-INSERT INTO Lecturer (id, l_msgv, degree) VALUES
-(6, 'GV001', 'PhD'),
-(7, 'GV002', 'Master'),
-(8, 'GV003', 'Master'),
-(11, 'GV004', 'PhD'),
-(12, 'GV005', 'Bachelor');
+-- Dữ liệu Lecturer (không còn cột degree)
+INSERT INTO Lecturer (id, l_msgv) VALUES
+(6, 'GV001'),
+(7, 'GV002'),
+(8, 'GV003'),
+(11, 'GV004'),
+(12, 'GV005');
+
+-- Thêm dữ liệu cho bảng Lecturer_Degree (Một giảng viên giờ đây có thể insert nhiều dòng, đại diện cho nhiều bằng cấp)
+INSERT INTO Lecturer_Degree (lecturer_id, degree) VALUES
+(6, 'Bachelor'), (6, 'Master'), (6, 'PhD'), -- GV001 có cả 3 bằng
+(7, 'Bachelor'), (7, 'Master'),             -- GV002 có 2 bằng
+(8, 'Bachelor'), (8, 'Master'),
+(11, 'Bachelor'), (11, 'PhD'),
+(12, 'Bachelor');
 
 -- Admin (đã có degree)
 INSERT INTO Admin (id, a_msqt, degree) VALUES
@@ -733,30 +876,30 @@ INSERT INTO File (class_id, chapter_id, topic_id, file_id, file_name, file_path,
 (3,2,2,1,'kcl_simulation.mp4','/files/kcl_simulation.mp4', 180),
 (4,1,2,1,'thermo_lab.pdf','/files/thermo_lab.pdf', 120);
 
--- Test (các lớp đều Open hoặc Ongoing, trigger sẽ cho qua)
-INSERT INTO Test (test_name, test_start, test_end, test_timer, class_id, chapter_id) VALUES
-('Midterm DB', '2025-03-15 09:00:00', '2025-03-15 10:30:00', 90, 1, 1),
-('Quiz 1 DS', '2025-03-20 10:00:00', '2025-03-20 10:30:00', 30, 2, 1),
-('Final Circuit', '2025-05-10 13:00:00', '2025-05-10 15:00:00', 120, 3, NULL),
-('Thermo Assignment', '2025-04-01 00:00:00', '2025-04-07 23:59:59', 0, 4, NULL),
-('Struct Quiz', '2025-03-25 08:00:00', '2025-03-25 08:45:00', 45, 5, 2),
-('Quiz 2 DB', '2025-04-10 09:00:00', '2025-04-10 10:00:00', 60, 1, 2),
-('Quiz 3 DS', '2025-04-15 10:00:00', '2025-04-15 10:45:00', 45, 2, 2),
-('Assignment 2 Circuit', '2025-05-01 00:00:00', '2025-05-05 23:59:59', 0, 3, NULL),
-('Project DB', '2025-05-20 00:00:00', '2025-06-01 23:59:59', 0, 1, NULL),
-('Final Exam DS', '2025-06-10 09:00:00', '2025-06-10 11:30:00', 150, 2, NULL);
+-- Thêm dữ liệu loại bài kiểm tra vào cột test_type
+INSERT INTO Test (test_name, test_type, test_start, test_end, test_timer, class_id, chapter_id) VALUES
+('Midterm DB', 'Quiz', '2025-03-15 09:00:00', '2025-03-15 10:30:00', 90, 1, 1),
+('Quiz 1 DS', 'Quiz', '2025-03-20 10:00:00', '2025-03-20 10:30:00', 30, 2, 1),
+('Final Circuit', 'Quiz', '2025-05-10 13:00:00', '2025-05-10 15:00:00', 120, 3, NULL),
+('Thermo Assignment', 'File_submission', '2025-04-01 00:00:00', '2025-04-07 23:59:59', 0, 4, NULL),
+('Struct Quiz', 'File_submission', '2025-03-25 08:00:00', '2025-03-25 08:45:00', 45, 5, 2),
+('Quiz 2 DB', 'Quiz', '2025-04-10 09:00:00', '2025-04-10 10:00:00', 60, 1, 2),
+('Quiz 3 DS', 'Quiz', '2025-04-15 10:00:00', '2025-04-15 10:45:00', 45, 2, 2),
+('Assignment 2 Circuit', 'File_submission', '2025-05-01 00:00:00', '2025-05-05 23:59:59', 0, 3, NULL),
+('Project DB', 'File_submission', '2025-05-20 00:00:00', '2025-06-01 23:59:59', 0, 1, NULL),
+('Final Exam DS', 'File_submission', '2025-06-10 09:00:00', '2025-06-10 11:30:00', 150, 2, NULL);
 
 -- Quiz
-INSERT INTO Quiz (test_id, quizz_id) VALUES
-(1, 'QZ001'), (2, 'QZ002'), (6, 'QZ003'), (7, 'QZ004'), (3, 'QZ005');
+INSERT INTO Quiz (test_id) VALUES
+(1), (2), (6), (7), (3);
 
 -- File_submission
-INSERT INTO File_submission (test_id, fs_id, file_size, path) VALUES
-(4, 'FS001', 50.00, '/submissions/'),
-(5, 'FS002', 50.00, '/submissions/'),
-(8, 'FS003', 100.00, '/submissions/'),
-(9, 'FS004', 200.00, '/submissions/'),
-(10, 'FS005', 20.00, '/submissions/');
+INSERT INTO File_submission (test_id, path) VALUES
+(4, '/submissions/'),
+(5, '/submissions/'),
+(8, '/submissions/'),
+(9, '/submissions/'),
+(10, '/submissions/');
 
 -- Question
 INSERT INTO Question (question_type, question_content, max_score) VALUES
@@ -841,6 +984,7 @@ INSERT INTO Comment (comment_content, post_id, ua_id, parent_comment_id) VALUES
 -- CỐ GẮNG chèn thiết bị thứ 4 cho Duc (ID 4)
 -- Kết quả kỳ vọng: MySQL báo lỗi 'Lỗi: Tài khoản đã đăng nhập trên 3 thiết bị...'
 -- INSERT INTO User_Session (user_id, device_id) VALUES (4, 'DUC-TABLET-UNKNOWN');
+
 
 -- ============================================================
 -- KẾT THÚC
