@@ -155,9 +155,10 @@ CREATE TABLE File (
 CREATE TABLE Test (
     test_id INT AUTO_INCREMENT PRIMARY KEY,
     test_name VARCHAR(255) NOT NULL,
-    test_start DATETIME,
-    test_end DATETIME,
-    test_timer INT COMMENT 'Thời gian làm bài (phút)',
+    test_type ENUM('Quiz', 'File_submission') NOT NULL, 
+    test_start DATETIME NOT NULL, -- Thêm NOT NULL
+    test_end DATETIME NOT NULL,   -- Thêm NOT NULL
+    test_timer INT NOT NULL COMMENT 'Thời gian làm bài (phút), 0 nếu không giới hạn', -- Thêm NOT NULL
     class_id INT NOT NULL,
     chapter_id INT,
     FOREIGN KEY (class_id) REFERENCES Class(class_id),
@@ -167,17 +168,14 @@ CREATE TABLE Test (
 
 CREATE TABLE Quiz (
     test_id INT PRIMARY KEY,
-    quizz_id VARCHAR(50) UNIQUE NOT NULL,
     FOREIGN KEY (test_id) REFERENCES Test(test_id) ON DELETE CASCADE
 );
 
 CREATE TABLE File_submission (
     test_id INT PRIMARY KEY,
-    fs_id VARCHAR(50) UNIQUE NOT NULL,
     path VARCHAR(512),
     FOREIGN KEY (test_id) REFERENCES Test(test_id) ON DELETE CASCADE
 );
-
 -- ------------------------------------------------------------
 -- 6. NGÂN HÀNG CÂU HỎI
 -- ------------------------------------------------------------
@@ -257,7 +255,7 @@ CREATE TABLE Post (
     post_end DATETIME,
     ua_id INT NOT NULL,
     class_id INT NOT NULL,
-    FOREIGN KEY (ua_id) REFERENCES User_acc(ua_id),
+    FOREIGN KEY (ua_id) REFERENCES User_acc(ua_id) ON DELETE CASCADE, -- Đã bổ sung
     FOREIGN KEY (class_id) REFERENCES Class(class_id) ON DELETE CASCADE
 );
 
@@ -268,7 +266,7 @@ CREATE TABLE Comment (
     post_id INT NOT NULL,
     ua_id INT NOT NULL,
     FOREIGN KEY (post_id) REFERENCES Post(post_id) ON DELETE CASCADE,
-    FOREIGN KEY (ua_id) REFERENCES User_acc(ua_id)
+    FOREIGN KEY (ua_id) REFERENCES User_acc(ua_id) ON DELETE CASCADE -- Đã bổ sung
 );
 
 -- ------------------------------------------------------------
@@ -665,6 +663,21 @@ BEGIN
     END IF;
 END//
 
+-- [MỚI] Chặn update câu trắc nghiệm thành tự luận nếu đang có Choice
+CREATE TRIGGER trg_prevent_update_to_essay_with_choices
+BEFORE UPDATE ON Question
+FOR EACH ROW
+BEGIN
+    DECLARE choice_count INT;
+    IF OLD.question_type != 'essay' AND NEW.question_type = 'essay' THEN
+        SELECT COUNT(*) INTO choice_count FROM Choice WHERE question_id = NEW.question_id;
+        IF choice_count > 0 THEN
+            SIGNAL SQLSTATE '45000' 
+            SET MESSAGE_TEXT = 'Không thể đổi thành câu hỏi tự luận vì câu hỏi này đang chứa các đáp án (Choices). Vui lòng xóa các đáp án trước.';
+        END IF;
+    END IF;
+END//
+
 DELIMITER ;
 
 -- ------------------------------------------------------------
@@ -803,30 +816,30 @@ INSERT INTO File (class_id, chapter_id, topic_id, file_id, file_name, file_path,
 (3,2,2,1,'kcl_simulation.mp4','/files/kcl_simulation.mp4', 180),
 (4,1,2,1,'thermo_lab.pdf','/files/thermo_lab.pdf', 120);
 
--- Test (các lớp đều Open hoặc Ongoing, trigger sẽ cho qua)
-INSERT INTO Test (test_name, test_start, test_end, test_timer, class_id, chapter_id) VALUES
-('Midterm DB', '2025-03-15 09:00:00', '2025-03-15 10:30:00', 90, 1, 1),
-('Quiz 1 DS', '2025-03-20 10:00:00', '2025-03-20 10:30:00', 30, 2, 1),
-('Final Circuit', '2025-05-10 13:00:00', '2025-05-10 15:00:00', 120, 3, NULL),
-('Thermo Assignment', '2025-04-01 00:00:00', '2025-04-07 23:59:59', 0, 4, NULL),
-('Struct Quiz', '2025-03-25 08:00:00', '2025-03-25 08:45:00', 45, 5, 2),
-('Quiz 2 DB', '2025-04-10 09:00:00', '2025-04-10 10:00:00', 60, 1, 2),
-('Quiz 3 DS', '2025-04-15 10:00:00', '2025-04-15 10:45:00', 45, 2, 2),
-('Assignment 2 Circuit', '2025-05-01 00:00:00', '2025-05-05 23:59:59', 0, 3, NULL),
-('Project DB', '2025-05-20 00:00:00', '2025-06-01 23:59:59', 0, 1, NULL),
-('Final Exam DS', '2025-06-10 09:00:00', '2025-06-10 11:30:00', 150, 2, NULL);
+-- Thêm dữ liệu loại bài kiểm tra vào cột test_type
+INSERT INTO Test (test_name, test_type, test_start, test_end, test_timer, class_id, chapter_id) VALUES
+('Midterm DB', 'Quiz', '2025-03-15 09:00:00', '2025-03-15 10:30:00', 90, 1, 1),
+('Quiz 1 DS', 'Quiz', '2025-03-20 10:00:00', '2025-03-20 10:30:00', 30, 2, 1),
+('Final Circuit', 'Quiz', '2025-05-10 13:00:00', '2025-05-10 15:00:00', 120, 3, NULL),
+('Thermo Assignment', 'File_submission', '2025-04-01 00:00:00', '2025-04-07 23:59:59', 0, 4, NULL),
+('Struct Quiz', 'File_submission', '2025-03-25 08:00:00', '2025-03-25 08:45:00', 45, 5, 2),
+('Quiz 2 DB', 'Quiz', '2025-04-10 09:00:00', '2025-04-10 10:00:00', 60, 1, 2),
+('Quiz 3 DS', 'Quiz', '2025-04-15 10:00:00', '2025-04-15 10:45:00', 45, 2, 2),
+('Assignment 2 Circuit', 'File_submission', '2025-05-01 00:00:00', '2025-05-05 23:59:59', 0, 3, NULL),
+('Project DB', 'File_submission', '2025-05-20 00:00:00', '2025-06-01 23:59:59', 0, 1, NULL),
+('Final Exam DS', 'File_submission', '2025-06-10 09:00:00', '2025-06-10 11:30:00', 150, 2, NULL);
 
 -- Quiz
-INSERT INTO Quiz (test_id, quizz_id) VALUES
-(1, 'QZ001'), (2, 'QZ002'), (6, 'QZ003'), (7, 'QZ004'), (3, 'QZ005');
+INSERT INTO Quiz (test_id) VALUES
+(1), (2), (6), (7), (3);
 
 -- File_submission
-INSERT INTO File_submission (test_id, fs_id, path) VALUES
-(4, 'FS001', '/submissions/'),
-(5, 'FS002', '/submissions/'),
-(8, 'FS003', '/submissions/'),
-(9, 'FS004', '/submissions/'),
-(10, 'FS005', '/submissions/');
+INSERT INTO File_submission (test_id, path) VALUES
+(4, '/submissions/'),
+(5, '/submissions/'),
+(8, '/submissions/'),
+(9, '/submissions/'),
+(10, '/submissions/');
 
 -- Question
 INSERT INTO Question (question_type, question_content, max_score) VALUES
