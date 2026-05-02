@@ -51,26 +51,19 @@ BEGIN
         SET MESSAGE_TEXT = 'Các thông tin bắt buộc không được để trống hoặc NULL!';
     END IF;
 
-    -- [Validation 2] Kiểm tra độ dài họ và tên
-    IF CHAR_LENGTH(TRIM(p_firstName)) < 2 OR 
-        CHAR_LENGTH(TRIM(p_lastName)) < 2 THEN
-        SIGNAL SQLSTATE '45000' 
-        SET MESSAGE_TEXT = 'Họ và Tên phải có độ dài tối thiểu 2 ký tự!';
-    END IF;
-
-    -- [Validation 3] Kiểm tra miền giá trị của giới tính (ENUM logic)
+    -- [Validation 2] Kiểm tra miền giá trị của giới tính (ENUM logic)
     IF p_sex NOT IN ('Male', 'Female', 'Other') THEN
         SIGNAL SQLSTATE '45000' 
         SET MESSAGE_TEXT = 'Giới tính không hợp lệ!';
     END IF;
 
-    -- [Validation 4] Kiểm tra định dạng email theo domain tổ chức
+    -- [Validation 3] Kiểm tra định dạng email theo domain tổ chức
     IF RIGHT(TRIM(p_email), 13) != '@hcmut.edu.vn' THEN
         SIGNAL SQLSTATE '45000' 
         SET MESSAGE_TEXT = 'Email k hợp lệ!';
     END IF;
 
-    -- [Validation 5] Kiểm tra độ tuổi (>= 18)
+    -- [Validation 4] Kiểm tra độ tuổi (>= 18)
     IF p_birthday IS NULL THEN
         SIGNAL SQLSTATE '45000' 
         SET MESSAGE_TEXT = 'Ngày sinh là bắt buộc!';
