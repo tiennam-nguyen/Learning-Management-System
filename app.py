@@ -51,12 +51,12 @@ def login():
                 user_id = user['ua_id']
 
                 try:
-                    cursor.execute("SELECT 1 FROM User_Session WHERE user_id = %s AND device_id = %s", (user_id, device_id))
-                    session_exists = cursor.fetchone()
-
-                    if not session_exists:
-                        cursor.execute("INSERT INTO User_Session (user_id, device_id) VALUES (%s, %s)", (user_id, device_id))
-                        conn.commit()
+                    cursor.execute("INSERT INTO User_Session (ua_id) VALUES (%s)", (user_id,))
+                    conn.commit()
+                    
+                    # Lưu lại session_id của DB vào Flask session để lát nữa biết đường mà Logout
+                    session['db_session_id'] = cursor.lastrowid 
+                    
                 except mysql.connector.Error as err:
                     if err.sqlstate == '45000':
                         flash('Tài khoản đã đăng nhập trên 3 thiết bị. Vui lòng đăng xuất ở thiết bị khác!', 'danger')
@@ -111,13 +111,16 @@ def login():
 def logout():
     user_id = session.get('user_id')
     device_id = session.get('device_id')
-    if user_id and device_id:
+    db_session_id = session.get('db_session_id')
+    
+    if db_session_id:
         try:
             conn = get_db_connection()
             cursor = conn.cursor()
 
-            query = "DELETE FROM User_Session WHERE user_id = %s AND device_id = %s"
-            cursor.execute(query, (user_id, device_id))
+            # Xóa đúng phiên đăng nhập hiện tại dựa trên session_id đã lưu lúc nãy
+            query = "DELETE FROM User_Session WHERE session_id = %s"
+            cursor.execute(query, (db_session_id,))
             conn.commit()
         except mysql.connector.Error as err:
             print(f"Lỗi khi xóa session: {err}")
@@ -158,7 +161,8 @@ def lecturer_dashboard():
         cursor = conn.cursor(dictionary=True)
 
         query_profile = """
-            SELECT u.firstName, u.lastName, u.email, u.sex, u.birthday, l.l_msgv AS l_id, l.degree AS department
+            SELECT u.firstName, u.lastName, u.email, u.sex, u.birthday, l.l_msgv AS l_id, 
+                   (SELECT GROUP_CONCAT(degree SEPARATOR ', ') FROM Lecturer_Degree WHERE lecturer_id = l.id) AS department
             FROM User u
             JOIN Lecturer l ON u.id = l.id
             WHERE u.id = %s
@@ -411,10 +415,13 @@ def user_management():
         offset = (page - 1) * per_page
         pagination = {"page": page, "per_page": per_page, "total": total, "pages": pages}
 
+        # CODE MỚI: Fix lỗi l.degree cho trang Admin
         cursor.execute(
             f"""
             SELECT u.id, u.firstName, u.middleName, u.lastName, u.sex, u.email, u.birthday, u.nationality,
-                   s.s_mssv, l.l_msgv, l.degree AS l_degree, a.a_msqt, a.degree AS a_degree
+                   s.s_mssv, l.l_msgv, 
+                   (SELECT GROUP_CONCAT(degree SEPARATOR ', ') FROM Lecturer_Degree WHERE lecturer_id = l.id) AS l_degree, 
+                   a.a_msqt, a.degree AS a_degree
             FROM User u
             LEFT JOIN Student s ON u.id = s.id
             LEFT JOIN Lecturer l ON u.id = l.id
