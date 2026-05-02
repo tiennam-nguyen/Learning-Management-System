@@ -9,7 +9,7 @@
         <p class="text-muted mb-0">Manage students, lecturers, and administrators.</p>
     </div>
     <div class="col-md-4 text-md-end mt-3 mt-md-0">
-        <a href="{{ url_for('lecturer_stats') }}" 
+        <a href="{{ url_for('lecturer_stats') }}"
             class="btn btn-warning shadow-sm rounded-pill px-4 fw-bold">
             View Stats
         </a>
@@ -35,6 +35,14 @@
                     <option value="Lecturer" {% if filters.role == 'Lecturer' %}selected{% endif %}>Lecturer</option>
                     <option value="Admin" {% if filters.role == 'Admin' %}selected{% endif %}>Admin</option>
                 </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label fw-semibold">Sort ID</label>
+                <select class="form-select bg-light" name="order" onchange="this.form.submit()">
+                    <option value="desc" {% if current_order == 'desc' %}selected{% endif %}>DESC</option>
+                    <option value="asc" {% if current_order == 'asc' %}selected{% endif %}>ASC</option>
+                </select>
+                <input type="hidden" name="sort" value="{{ current_sort }}">
             </div>
             <div class="col-md-3 d-grid">
                 <button class="btn btn-outline-primary rounded-pill fw-bold" type="submit">Apply</button>
@@ -80,7 +88,7 @@
                         </td>
                         <td class="px-4 text-muted">{{ user.email }}</td>
                         <td class="px-4 text-center">
-                            <button type="button" class="btn btn-sm btn-outline-primary rounded-pill px-3 me-1 mb-1" 
+                            <button type="button" class="btn btn-sm btn-outline-primary rounded-pill px-3 me-1 mb-1"
                                 data-bs-toggle="modal" data-bs-target="#editUserModal"
                                 data-id="{{ user.id }}"
                                 data-firstname="{{ user.firstName }}"
@@ -92,12 +100,12 @@
                                 data-nationality="{{ user.nationality }}">
                                 Edit
                             </button>
-                            <button type="button" class="btn btn-sm btn-outline-warning rounded-pill px-3 me-1 mb-1" 
+                            <button type="button" class="btn btn-sm btn-outline-warning rounded-pill px-3 me-1 mb-1"
                                 data-bs-toggle="modal" data-bs-target="#changePasswordModal"
                                 data-id="{{ user.id }}">
                                 Password
                             </button>
-                            <button type="button" class="btn btn-sm btn-outline-danger rounded-pill px-3 mb-1" 
+                            <button type="button" class="btn btn-sm btn-outline-danger rounded-pill px-3 mb-1"
                                 data-bs-toggle="modal" data-bs-target="#deleteUserModal"
                                 data-id="{{ user.id }}"
                                 data-name="{{ user.firstName }} {{ user.lastName }}">
@@ -118,16 +126,14 @@
 
 <!-- Pagination -->
 {% if pagination.pages > 1 %}
-<nav aria-label="User list pages" class="mb-5">
+<nav class="mb-5">
     <ul class="pagination justify-content-center">
         <li class="page-item {% if pagination.page <= 1 %}disabled{% endif %}">
-            <a class="page-link" href="{{ url_for('user_management', q=filters.q, role=filters.role, page=pagination.page-1, per_page=pagination.per_page) }}">Prev</a>
+            <a class="page-link" href="{{ url_for('user_management', q=filters.q, role=filters.role, sort=current_sort, order=current_order, page=pagination.page-1, per_page=pagination.per_page) }}">Prev</a>
         </li>
-        <li class="page-item disabled">
-            <span class="page-link">Page {{ pagination.page }} / {{ pagination.pages }}</span>
-        </li>
+        <li class="page-item disabled"><span class="page-link">Page {{ pagination.page }} / {{ pagination.pages }}</span></li>
         <li class="page-item {% if pagination.page >= pagination.pages %}disabled{% endif %}">
-            <a class="page-link" href="{{ url_for('user_management', q=filters.q, role=filters.role, page=pagination.page+1, per_page=pagination.per_page) }}">Next</a>
+            <a class="page-link" href="{{ url_for('user_management', q=filters.q, role=filters.role, sort=current_sort, order=current_order, page=pagination.page+1, per_page=pagination.per_page) }}">Next</a>
         </li>
     </ul>
 </nav>
@@ -341,17 +347,17 @@
                 var button = event.relatedTarget;
                 document.getElementById('editUserId').value = button.getAttribute('data-id');
                 document.getElementById('editFirstName').value = button.getAttribute('data-firstname');
-                
+
                 var mName = button.getAttribute('data-middlename');
                 document.getElementById('editMiddleName').value = (mName !== 'None' && mName !== '') ? mName : '';
-                
+
                 document.getElementById('editLastName').value = button.getAttribute('data-lastname');
                 document.getElementById('editSex').value = button.getAttribute('data-sex');
                 document.getElementById('editEmail').value = button.getAttribute('data-email');
-                
+
                 var bDay = button.getAttribute('data-birthday');
                 document.getElementById('editBirthday').value = (bDay !== 'None' && bDay !== '') ? bDay : '';
-                
+
                 var nat = button.getAttribute('data-nationality');
                 document.getElementById('editNationality').value = (nat !== 'None' && nat !== '') ? nat : '';
             });

@@ -365,6 +365,20 @@ def user_management():
         role_filter = (request.args.get("role") or "All").strip()
         page = request.args.get("page", "1")
         per_page = request.args.get("per_page", "10")
+
+        # Tham so sap xep
+        sort_by = request.args.get("sort", "id")
+        order = request.args.get("order", "desc")
+
+        sort_map = {
+            "id": "u.id",
+            "firstName": "u.firstName",
+            "lastName": "u.lastName",
+            "email": "u.email",
+            "birthday": "u.birthday"
+        }
+        actual_sort = sort_map.get(sort_by, "u.id")
+        actual_order = "DESC" if order == "desc" else "ASC"
         try:
             page = max(1, int(page))
         except ValueError:
@@ -427,7 +441,7 @@ def user_management():
             LEFT JOIN Lecturer l ON u.id = l.id
             LEFT JOIN Admin a ON u.id = a.id
             WHERE {where_sql}
-            ORDER BY u.id DESC
+            ORDER BY {actual_sort} {actual_order}
             LIMIT %s OFFSET %s
             """,
             tuple(params) + (per_page, offset),
@@ -476,7 +490,9 @@ def user_management():
     return render_template('user_management.html',
                            filters=filters,
                            pagination=pagination,
-                           users=users)
+                           users=users,
+                           current_sort=sort_by,
+                           current_order=order)
 
 @app.route('/class/<int:class_id>')
 def class_detail(class_id):
@@ -613,9 +629,8 @@ def create_user():
         # FIX thao tác Insert
         args_user = (first_name, middle_name, last_name, sex, email, birthday, nationality, 0)
         result_args = cursor.callproc("sp_InsertUser", args_user)
-        
-        new_user_id = result_args[7] 
 
+        new_user_id = result_args[7]
         if role == "Student":
             cursor.callproc("sp_InsertStudent", (new_user_id, user_code))
         elif role == "Lecturer":
