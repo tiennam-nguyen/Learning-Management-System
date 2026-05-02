@@ -1,0 +1,137 @@
+{% extends 'base.html' %}
+
+{% block title %}Take Test - {{ test.test_name }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center mt-4 mb-5">
+    <div class="col-lg-10">
+        <!-- Test Header Card -->
+        <div class="card shadow-sm border-0 rounded-4 mb-4 bg-primary text-white overflow-hidden position-relative">
+            <div class="position-absolute top-0 end-0 w-50 h-100" style="background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1)); pointer-events: none;"></div>
+            <div class="card-body p-5 position-relative z-1">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <span class="badge bg-light text-primary mb-2">Test #{{ test.test_id }}</span>
+                        <h2 class="fw-bold mb-2">{{ test.test_name }}</h2>
+                        <div class="d-flex gap-3 text-white-50">
+                            <span><i class="bi bi-clock me-1"></i> {{ test.test_timer }} mins</span>
+                            <span><i class="bi bi-calendar3 me-1"></i> Due: {{ test.test_end }}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Warning Alert -->
+        <div class="alert alert-warning border-start border-4 border-warning shadow-sm mb-4" role="alert">
+            <h5 class="alert-heading fw-bold"><i class="bi bi-exclamation-triangle-fill me-2"></i>Important Instructions</h5>
+            <p class="mb-0">Please answer all questions before submitting. Once submitted, your answers will be recorded and scored automatically for multiple choice questions. Essay questions will be graded later by your lecturer.</p>
+        </div>
+
+        <!-- Test Form -->
+        <form method="POST" action="{{ url_for('take_test', test_id=test.test_id) }}" id="testForm" class="needs-validation" novalidate>
+            {% for q in questions %}
+            <div class="card shadow-sm border-0 rounded-4 mb-4">
+                <div class="card-header bg-white border-bottom-0 pt-4 pb-0">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h5 class="fw-bold text-dark m-0">Question {{ loop.index }}</h5>
+                        <span class="badge bg-light text-secondary border">{{ q.score }} Points</span>
+                    </div>
+                </div>
+                <div class="card-body p-4 pt-3">
+                    <p class="fs-5 mb-4">{{ q.question_content }}</p>
+
+                    {% if q.question_type in ['multiple_choice', 'true_false'] %}
+                        <div class="d-flex flex-column gap-2">
+                            {% for c in q.choices %}
+                            <div class="form-check custom-radio-wrapper p-3 border rounded-3 hover-bg-light transition-all">
+                                <input class="form-check-input mt-1" type="radio" name="question_{{ q.question_id }}" id="choice_{{ c.choice_id }}" value="{{ c.choice_id }}" required>
+                                <label class="form-check-label d-block ms-2 cursor-pointer w-100" for="choice_{{ c.choice_id }}">
+                                    {{ c.choice_content }}
+                                </label>
+                            </div>
+                            {% endfor %}
+                            <div class="invalid-feedback mt-2">
+                                Please select an answer.
+                            </div>
+                        </div>
+                    {% elif q.question_type == 'essay' %}
+                        <div class="form-group">
+                            <label for="essay_{{ q.question_id }}" class="visually-hidden">Your Answer</label>
+                            <textarea class="form-control bg-light border-0 p-3 shadow-none" id="essay_{{ q.question_id }}" name="question_{{ q.question_id }}" rows="6" placeholder="Write your answer here..." required></textarea>
+                            <div class="invalid-feedback mt-2">
+                                Please provide an answer.
+                            </div>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+
+            <!-- Submit Action -->
+            <div class="card shadow-sm border-0 rounded-4 mt-5 bg-light">
+                <div class="card-body p-4 text-center">
+                    <h5 class="mb-3">Ready to submit?</h5>
+                    <p class="text-muted mb-4">Make sure you have reviewed all your answers.</p>
+                    <div class="d-flex justify-content-center gap-3">
+                        <a href="{{ url_for('class_detail', class_id=test.class_id) }}" class="btn btn-outline-secondary px-4 py-2 fw-bold">Cancel</a>
+                        <button type="submit" class="btn btn-success px-5 py-2 fw-bold shadow-sm" onclick="return confirm('Are you sure you want to submit your test? This action cannot be undone.');">
+                            <i class="bi bi-send-check me-2"></i>Submit Test
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<style>
+    /* Custom CSS for Test UI */
+    .transition-all {
+        transition: all 0.2s ease-in-out;
+    }
+    .hover-bg-light:hover {
+        background-color: #f8f9fa;
+        border-color: #dee2e6 !important;
+    }
+    .custom-radio-wrapper:has(input:checked) {
+        background-color: #e8f4fd;
+        border-color: #0d6efd !important;
+    }
+    .cursor-pointer {
+        cursor: pointer;
+    }
+    textarea:focus {
+        background-color: #fff !important;
+        border: 1px solid #86b7fe !important;
+        box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25) !important;
+    }
+</style>
+
+<script>
+    // Example starter JavaScript for disabling form submissions if there are invalid fields
+    (function () {
+        'use strict'
+
+        // Fetch all the forms we want to apply custom Bootstrap validation styles to
+        var forms = document.querySelectorAll('.needs-validation')
+
+        // Loop over them and prevent submission
+        Array.prototype.slice.call(forms)
+            .forEach(function (form) {
+                form.addEventListener('submit', function (event) {
+                    if (!form.checkValidity()) {
+                        event.preventDefault()
+                        event.stopPropagation()
+                        // Find the first invalid element and scroll to it
+                        var firstInvalid = form.querySelector(':invalid');
+                        if(firstInvalid) {
+                            firstInvalid.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        }
+                    }
+                    form.classList.add('was-validated')
+                }, false)
+            })
+    })()
+</script>
+{% endblock %}

@@ -295,7 +295,7 @@ def student_dashboard():
         user_info = cursor.fetchone()
 
         try:
-            cursor.execute("SELECT fn_MaxScore_Student_Test(%s, %s) AS gpa", (user_id, 1))
+            cursor.execute("SELECT fn_student_GPA_score(%s) AS gpa", (user_id,))
             gpa_result = cursor.fetchone()
             if gpa_result and gpa_result["gpa"] is not None:
                 gpa = gpa_result["gpa"]
@@ -482,6 +482,7 @@ def class_detail(class_id):
     tests = [] # Khởi tạo danh sách bài test rỗng
     chapters = []
     topics = []
+    file_status = None
 
     try:
         conn = get_db_connection()
@@ -542,11 +543,27 @@ def class_detail(class_id):
             questions = cursor.fetchall()
 
         # 6. LẤY DANH SÁCH BÀI TEST CHỖ NÀY NÈ!
-        cursor.execute(
-            "SELECT test_id, test_name, test_start, test_end, test_timer FROM Test WHERE class_id = %s ORDER BY test_start DESC",
-            (class_id,)
-        )
+        if session.get('role') == 'Student':
+            cursor.execute(
+                """
+                SELECT test_id, test_name, test_start, test_end, test_timer,
+                       fn_MaxScore_Student_Test(%s, test_id) AS highest_score
+                FROM Test WHERE class_id = %s ORDER BY test_start DESC
+                """,
+                (session.get('user_id'), class_id)
+            )
+        else:
+            cursor.execute(
+                "SELECT test_id, test_name, test_start, test_end, test_timer, NULL AS highest_score FROM Test WHERE class_id = %s ORDER BY test_start DESC",
+                (class_id,)
+            )
         tests = cursor.fetchall()
+
+        # 7. Trạng thái tài liệu của lớp (fn_FileStatus)
+        cursor.execute("SELECT fn_FileStatus(%s) AS file_status", (class_id,))
+        fs_result = cursor.fetchone()
+        if fs_result:
+            file_status = fs_result['file_status']
 
     except mysql.connector.Error as e:
         flash(f"Database error: {e}", "danger")
@@ -556,8 +573,9 @@ def class_detail(class_id):
         if 'conn' in locals() and conn and conn.is_connected():
             conn.close()
 
-    # TRUYỀN BIẾN tests VÀO ĐÂY LÀ LÊN HÌNH NGAY!
-    return render_template('class_detail.html', class_info=class_info, students=students, questions=questions, tests=tests, chapters=chapters, topics=topics, all_files=all_files)
+    return render_template('class_detail.html', class_info=class_info, students=students, questions=questions,
+                           tests=tests, chapters=chapters, topics=topics, all_files=all_files,
+                           file_status=file_status)
 
 @app.route('/admin/users/create', methods=['POST'])
 def create_user():
@@ -1234,6 +1252,164 @@ def upload_topic_file(topic_id):
         return redirect(request.referrer or url_for('index'))
 
     return render_template('upload_file.html', topic_id=topic_id)
+
+@app.route('/test/<int:test_id>/results', methods=['GET'])
+def test_results(test_id):
+    if 'user_id' not in session or session.get('role') not in ['Lecturer', 'Admin']:
+        flash('Unauthorized access.', 'danger')
+        return redirect(url_for('dashboard'))
+
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    try:
+        # Get test info
+        cursor.execute(
+            """
+            SELECT t.*, c.class_name, s.subject_name 
+            FROM Test t
+            JOIN Class c ON t.class_id = c.class_id
+            JOIN Subject s ON c.subject_id = s.subject_id
+            WHERE t.test_id = %s
+            """, 
+            (test_id,)
+        )
+        test_info = cursor.fetchone()
+        
+        if not test_info:
+            flash("Test not found.", "danger")
+            return redirect(url_for('dashboard'))
+
+        # Fetch all attempts for this test
+        cursor.execute(
+            """
+            SELECT a.attempt_id, a.attempt_index, a.start_time, a.end_time, a.score, 
+                   u.firstName, u.lastName, st.s_mssv
+            FROM Attempt a  
+            JOIN Student st ON a.student_id = st.id
+            JOIN User u ON st.id = u.id
+            WHERE a.test_id = %s
+            ORDER BY u.lastName, u.firstName, a.attempt_index
+            """,
+            (test_id,)
+        )
+        attempts = cursor.fetchall()
+
+        return render_template('test_results.html', test=test_info, attempts=attempts)
+
+    except mysql.connector.Error as e:
+        flash(f"Database error: {e}", "danger")
+        return redirect(url_for('dashboard'))
+    finally:
+        if 'cursor' in locals() and cursor: cursor.close()
+        if 'conn' in locals() and conn.is_connected(): conn.close()
+
+@app.route('/test/<int:test_id>', methods=['GET', 'POST'])
+def take_test(test_id):
+    if 'user_id' not in session or session.get('role') != 'Student':
+        flash('Unauthorized access or you must be a student to take tests.', 'danger')
+        return redirect(url_for('dashboard'))
+
+    user_id = session.get('user_id')
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    try:
+        # Get test info
+        cursor.execute("SELECT * FROM Test WHERE test_id = %s", (test_id,))
+        test_info = cursor.fetchone()
+        if not test_info:
+            flash("Test not found.", "danger")
+            return redirect(url_for('student_dashboard'))
+
+        if request.method == 'POST':
+            try:
+                # Find the next attempt index
+                cursor.execute(
+                    "SELECT COALESCE(MAX(attempt_index), 0) + 1 AS next_index FROM Attempt WHERE test_id = %s AND student_id = %s",
+                    (test_id, user_id)
+                )
+                attempt_index = cursor.fetchone()['next_index']
+
+                # Create the attempt
+                cursor.execute(
+                    "INSERT INTO Attempt (attempt_index, test_id, student_id) VALUES (%s, %s, %s)",
+                    (attempt_index, test_id, user_id)
+                )
+                attempt_id = cursor.lastrowid
+
+                # Insert answers
+                for key, value in request.form.items():
+                    if key.startswith('question_'):
+                        q_id = int(key.split('_')[1])
+                        
+                        # Get question type to determine if choice or essay
+                        cursor.execute("SELECT question_type FROM Question WHERE question_id = %s", (q_id,))
+                        q_type_row = cursor.fetchone()
+                        
+                        if q_type_row:
+                            q_type = q_type_row['question_type']
+                            if q_type in ['multiple_choice', 'true_false']:
+                                choice_id = int(value) if value else None
+                                cursor.execute(
+                                    "INSERT INTO Student_answer (attempt_id, question_id, choice_id) VALUES (%s, %s, %s)",
+                                    (attempt_id, q_id, choice_id)
+                                )
+                            elif q_type == 'essay':
+                                cursor.execute(
+                                    "INSERT INTO Student_answer (attempt_id, question_id, answer_text) VALUES (%s, %s, %s)",
+                                    (attempt_id, q_id, value)
+                                )
+                
+                conn.commit()
+                flash("Bài kiểm tra đã được nộp thành công! Điểm của bạn đã được cập nhật.", "success")
+                return redirect(url_for('class_detail', class_id=test_info['class_id']))
+
+            except mysql.connector.Error as err:
+                conn.rollback()
+                flash(f"Lỗi khi nộp bài: {err.msg}", "danger")
+                return redirect(url_for('class_detail', class_id=test_info['class_id']))
+
+        # GET request - Display the test form
+        # Get questions
+        cursor.execute(
+            """
+            SELECT q.question_id, q.question_type, q.question_content, COALESCE(tq.custom_score, q.max_score) AS score
+            FROM Test_Question tq
+            JOIN Question q ON tq.question_id = q.question_id
+            WHERE tq.test_id = %s
+            """,
+            (test_id,)
+        )
+        questions = cursor.fetchall()
+
+        # Get choices for multiple_choice / true_false
+        cursor.execute(
+            """
+            SELECT c.choice_id, c.question_id, c.choice_content
+            FROM Choice c
+            JOIN Test_Question tq ON c.question_id = tq.question_id
+            WHERE tq.test_id = %s
+            """,
+            (test_id,)
+        )
+        all_choices = cursor.fetchall()
+
+        # Map choices to questions
+        for q in questions:
+            if q['question_type'] in ['multiple_choice', 'true_false']:
+                q['choices'] = [c for c in all_choices if c['question_id'] == q['question_id']]
+            else:
+                q['choices'] = []
+
+        return render_template('take_test.html', test=test_info, questions=questions)
+
+    except mysql.connector.Error as e:
+        flash(f"Database error: {e}", "danger")
+        return redirect(url_for('dashboard'))
+    finally:
+        if 'cursor' in locals() and cursor: cursor.close()
+        if 'conn' in locals() and conn.is_connected(): conn.close()
 
 if __name__ == '__main__':
     app.run(debug=True)

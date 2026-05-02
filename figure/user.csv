@@ -1,0 +1,16 @@
+id,firstName,middleName,lastName,sex,email,birthday,nationality
+1,Nguyen,Van,An,Male,an.nguyen@hcmut.edu.vn,2000-01-15,Vietnam
+2,Tran,Thi,Binh,Female,binh.tran@hcmut.edu.vn,2001-03-22,Vietnam
+3,Le,Quang,Chau,Male,chau.le@hcmut.edu.vn,2000-07-30,Vietnam
+4,Pham,Minh,Duc,Male,duc.pham@hcmut.edu.vn,1999-11-11,Vietnam
+5,Hoang,Thi,Giang,Female,giang.hoang@hcmut.edu.vn,2001-05-05,Vietnam
+6,Vo,Van,Hai,Male,hai.vo@hcmut.edu.vn,1985-09-12,Vietnam
+7,Dang,Thi,Lan,Female,lan.dang@hcmut.edu.vn,1990-12-03,Vietnam
+8,Bui,Duc,Minh,Male,minh.bui@hcmut.edu.vn,1988-04-18,Vietnam
+9,Ngo,Thanh,Nga,Female,nga.ngo@hcmut.edu.vn,1992-06-25,Vietnam
+10,Trinh,Van,Phong,Male,phong.trinh@hcmut.edu.vn,1980-10-10,Vietnam
+11,Ly,Thi,Quyen,Female,quyen.ly@hcmut.edu.vn,1983-11-01,Vietnam
+12,Mai,Van,Sang,Male,sang.mai@hcmut.edu.vn,1987-02-14,Vietnam
+13,Do,Thi,Thuy,Female,thuy.do@hcmut.edu.vn,1995-08-20,Vietnam
+14,Phan,Van,Tuan,Male,tuan.phan@hcmut.edu.vn,1982-05-09,Vietnam
+15,Vu,Thi,Van,Female,van.vu@hcmut.edu.vn,1991-12-30,Vietnam

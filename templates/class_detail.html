@@ -52,6 +52,11 @@
 
                     <dt class="col-sm-4 text-muted">Lecturer</dt>
                     <dd class="col-sm-8">{{ class_info.lecturer_name or 'TBA' }}</dd>
+
+                    <dt class="col-sm-4 text-muted">File Status</dt>
+                    <dd class="col-sm-8">
+                        <span class="badge bg-info text-dark">{{ file_status or 'N/A' }}</span>
+                    </dd>
                 </dl>
             </div>
         </div>
@@ -161,6 +166,9 @@
                                     <th>Start Time</th>
                                     <th>End Time</th>
                                     <th>Duration</th>
+                                    {% if session.get('role') == 'Student' %}
+                                    <th class="text-center">Highest Score</th>
+                                    {% endif %}
                                     <th class="text-center">Action</th>
                                 </tr>
                             </thead>
@@ -172,8 +180,17 @@
                                         <td>{{ t.test_start }}</td>
                                         <td>{{ t.test_end }}</td>
                                         <td>{{ t.test_timer }} mins</td>
+                                        {% if session.get('role') == 'Student' %}
+                                        <td class="text-center fw-bold text-success">
+                                            {% if t.highest_score is not none %}{{ t.highest_score }}{% else %}N/A{% endif %}
+                                        </td>
+                                        {% endif %}
                                         <td class="text-center">
-                                            <a href="#" class="btn btn-sm btn-outline-secondary">View Result</a>
+                                            {% if session.get('role') == 'Student' %}
+                                            <a href="{{ url_for('take_test', test_id=t.test_id) }}" class="btn btn-sm btn-primary">Take Test</a>
+                                            {% else %}
+                                            <a href="{{ url_for('test_results', test_id=t.test_id) }}" class="btn btn-sm btn-outline-secondary">View Result</a>
+                                            {% endif %}
                                         </td>
                                     </tr>
                                 {% endfor %}

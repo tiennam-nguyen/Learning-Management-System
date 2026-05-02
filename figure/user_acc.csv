@@ -1,0 +1,16 @@
+ua_id,ua_username,ua_password,ua_image
+1,an.nguyen,pass123,NULL
+2,binh.tran,pass123,NULL
+3,chau.le,pass123,NULL
+4,duc.pham,pass123,NULL
+5,giang.hoang,pass123,NULL
+6,hai.vo,gvpass,NULL
+7,lan.dang,gvpass,NULL
+8,minh.bui,gvpass,NULL
+9,nga.ngo,adminpass,NULL
+10,phong.trinh,adminpass,NULL
+11,quyen.ly,gvpass,NULL
+12,sang.mai,gvpass,NULL
+13,thuy.do,adminpass,NULL
+14,tuan.phan,adminpass,NULL
+15,van.vu,adminpass,NULL
