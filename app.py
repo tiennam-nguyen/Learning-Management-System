@@ -603,7 +603,7 @@ def create_user():
         cursor.callproc("sp_CreateUser", args)
 
         conn.commit()
-        flash("User created successfully!", "success")
+        flash("User created successfully! Username: abc (abc@hcmut.edu.vn) | Pass: user_code", "success")
 
     except mysql.connector.Error as e:
         conn.rollback()
