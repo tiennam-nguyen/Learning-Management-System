@@ -119,7 +119,7 @@ DROP PROCEDURE IF EXISTS sp_InsertLecturer//
 -- Chức năng: Thêm giảng viên
 -- Cập nhật: Tách dữ liệu Insert vào 2 bảng Lecturer và Lecturer_Degree
 -- ----------------------------------------------------------
-DROP PROCEDURE IF EXISTS sp_InsertLecturer;
+DROP PROCEDURE IF EXISTS sp_InsertLecturer//
 CREATE PROCEDURE sp_InsertLecturer(
     IN p_user_id INT,
     IN p_msgv VARCHAR(20),
