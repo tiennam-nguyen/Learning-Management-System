@@ -121,7 +121,13 @@
         <h2>📉 Báo cáo Thống kê Điểm</h2>
         <table>
             <thead>
-                <tr><th>ID</th><th>MSSV</th><th>Họ & Tên</th><th>Lượt làm bài</th><th>Điểm Trung Bình</th></tr>
+                <tr>
+                    <th>ID</th>
+                    <th>MSSV</th>
+                    <th>Họ & Tên</th>
+                    <th>Lượt làm bài</th>
+                    <th>Tổng thời gian làm bài</th> <th>Điểm Trung Bình</th>
+                </tr>
             </thead>
             <tbody>
                 {% for row in stats_data %}
@@ -130,6 +136,9 @@
                     <td><strong>{{ row.MSSV }}</strong></td>
                     <td>{{ row.FullName }}</td>
                     <td style="text-align: center;">{{ row.TotalAttempts }}</td>
+                    
+                    <td style="text-align: center; color: #16a085;">{{ row.TotalTimeSeconds }} s</td> 
+                    
                     <td style="color: #e74c3c; font-weight: bold; text-align: center; font-size: 1.1em;">{{ row.AverageScore }}</td>
                 </tr>
                 {% endfor %}
