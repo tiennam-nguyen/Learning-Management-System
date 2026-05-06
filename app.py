@@ -505,6 +505,7 @@ def class_detail(class_id):
     tests = [] # Khởi tạo danh sách bài test rỗng
     chapters = []
     topics = []
+    file_status = None
 
     try:
         conn = get_db_connection()
@@ -571,6 +572,12 @@ def class_detail(class_id):
         )
         tests = cursor.fetchall()
 
+        # 7. Trạng thái tài liệu của lớp (fn_FileStatus)
+        cursor.execute("SELECT fn_FileStatus(%s) AS file_status", (class_id,))
+        fs_result = cursor.fetchone()
+        if fs_result and fs_result['file_status'] is not None:
+            file_status = fs_result['file_status']
+
     except mysql.connector.Error as e:
         flash(f"Database error: {e}", "danger")
     finally:
@@ -580,7 +587,9 @@ def class_detail(class_id):
             conn.close()
 
     # TRUYỀN BIẾN tests VÀO ĐÂY LÀ LÊN HÌNH NGAY!
-    return render_template('class_detail.html', class_info=class_info, students=students, questions=questions, tests=tests, chapters=chapters, topics=topics, all_files=all_files)
+    return render_template('class_detail.html', class_info=class_info, students=students, questions=questions,
+                           tests=tests, chapters=chapters, topics=topics, all_files=all_files,
+                           file_status=file_status)
 
 @app.route('/admin/users/create', methods=['POST'])
 def create_user():
